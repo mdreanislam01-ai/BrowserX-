@@ -175,6 +175,7 @@ fun CandyAddressBar(
         null
     }
     val glowCorner = lerp(30.dp, 16.dp, editProgress)
+    val hairlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
     val idleAlpha by animateFloatAsState(
         targetValue = if (isEditing) 0f else 1f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
@@ -223,7 +224,7 @@ fun CandyAddressBar(
                         val hairline = 1.dp.toPx()
                         val radius = glowCorner.toPx()
                         drawRoundRect(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                            color = hairlineColor,
                             topLeft = Offset(hairline / 2f, hairline / 2f),
                             size = Size(size.width - hairline, size.height - hairline),
                             cornerRadius = CornerRadius(radius, radius),
