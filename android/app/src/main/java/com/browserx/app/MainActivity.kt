@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -976,7 +977,7 @@ fun TabOverviewScreen(state: BrowserState) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SubScreenBar(title: String, state: BrowserState, actions: @Composable () -> Unit = {}) {
+fun SubScreenBar(title: String, state: BrowserState, actions: @Composable RowScope.() -> Unit = {}) {
     TopAppBar(
         title = { Text(title) },
         navigationIcon = {
