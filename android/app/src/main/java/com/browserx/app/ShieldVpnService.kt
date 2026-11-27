@@ -186,11 +186,11 @@ class ShieldVpnService : VpnService() {
         if ((packet[9].toInt() and 0xFF) != 17) return null // UDP only
 
         val udpStart = headerLength
-        val clientPort = readU16(packet, udpStart)
-        val destinationPort = readU16(packet, udpStart + 2)
+        val clientPort = ShieldDns.readU16(packet, udpStart)
+        val destinationPort = ShieldDns.readU16(packet, udpStart + 2)
         if (destinationPort != 53) return null
 
-        val udpLength = readU16(packet, udpStart + 4)
+        val udpLength = ShieldDns.readU16(packet, udpStart + 4)
         val dnsLength = udpLength - 8
         if (dnsLength <= 12) return null
 
