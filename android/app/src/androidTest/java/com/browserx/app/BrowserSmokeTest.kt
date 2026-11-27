@@ -90,6 +90,7 @@ class BrowserSmokeTest {
         ui.waitUntil(10000) { ui.onAllNodesWithText("Offline fixture").fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithText("A paragraph long enough to verify the real Reader Studio extraction.")
             .assertIsDisplayed()
+        capture("05-reader")
         ui.onNodeWithText("Save offline").performClick()
         ui.onNodeWithContentDescription("Close reader").performClick()
         ui.onNodeWithText("example.test").performClick()

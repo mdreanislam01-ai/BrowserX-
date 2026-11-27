@@ -8,6 +8,8 @@ import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.view.ContextThemeWrapper
 import android.view.ViewGroup
 import android.webkit.*
@@ -87,7 +89,12 @@ internal class BrowserSession(
     val view
         get() = engines[activeId]
 
-    fun notify(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    private val main = Handler(Looper.getMainLooper())
+
+    fun notify(message: String) {
+        // I/O and engine callbacks may complete on a worker without a Looper.
+        main.post { Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show() }
+    }
 
     fun save() {
         if (options().restoreTabs) store.saveSession(profileId, tabs, activeId)
@@ -229,7 +236,12 @@ internal class BrowserSession(
         val canvas = Canvas(image)
         canvas.scale(scale, scale)
         canvas.translate(-w.scrollX.toFloat(), -w.scrollY.toFloat())
-        w.draw(canvas)
+        try {
+            w.draw(canvas)
+        } catch (_: IllegalArgumentException) {
+            // Hardware-only layers may not support a software snapshot. Keep browsing available.
+            return
+        }
         previews[activeId] = image
         previewOrder.remove(activeId)
         previewOrder.addLast(activeId)

@@ -11,7 +11,7 @@ adb shell am instrument -w "$runner" | tr -d '\r' | tee device.log
 adb pull "/sdcard/Android/data/$pkg/files/smoke" screenshots || true
 if ! grep -Eq '^OK \([1-9][0-9]* tests?\)' device.log; then
   adb logcat -d -s AndroidRuntime:E > crash.log
-  summary=$(grep -E 'Error|Exception|Assertion|Reason:|Caused by|shortMsg|BrowserSmokeTest.kt|failed|FAILURES|stack=' device.log crash.log | head -c 3200 || true)
+  summary=$(grep -E 'Error|Exception|Assertion|Reason:|Caused by|shortMsg|com.browserx.app.|failed|FAILURES|stack=' device.log crash.log | head -c 3200 || true)
   echo "::error::Android smoke test: $(tr '\n' ' ' <<< "${summary:-No successful tests; inspect device.log}")"
   exit 1
 fi

@@ -18,7 +18,11 @@ import androidx.compose.ui.unit.dp
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -28,63 +32,72 @@ internal data class ReadingCopy(val url: String, val article: ReaderArticle)
 internal class ReadingLibrary(context: Context, profile: String) {
     private val dir = File(context.noBackupFilesDir, "reader/" + digest(profile))
 
+    private val revisions = MutableStateFlow(0)
+    val revision = revisions.asStateFlow()
+    private val fileLock = Mutex()
+
+    private suspend fun <T> onDisk(block: () -> T): T =
+        withContext(Dispatchers.IO) { fileLock.withLock { block() } }
+
     private fun digest(s: String) =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
     private fun file(url: String) = File(dir, digest(url) + ".json")
 
-    suspend fun save(copy: ReadingCopy) =
-        withContext(Dispatchers.IO) {
-            require(isWebUrl(copy.url))
-            dir.mkdirs()
-            val target = file(copy.url)
-            check(target.exists() || (dir.listFiles()?.count { it.extension == "json" } ?: 0) < 40) {
-                "Offline library is full"
-            }
-            val atomic = AtomicFile(target)
-            val stream = atomic.startWrite()
-            try {
-                val a = copy.article
-                stream.write(
-                    JSONObject()
-                        .put("url", copy.url)
-                        .put("title", a.title.take(2000))
-                        .put("byline", a.byline.take(2000))
-                        .put("text", a.content.take(120000))
-                        .toString()
-                        .toByteArray(),
-                )
-                atomic.finishWrite(stream)
-            } catch (e: Exception) {
-                atomic.failWrite(stream)
-                throw e
-            }
+    suspend fun save(copy: ReadingCopy) = onDisk {
+        require(isWebUrl(copy.url))
+        dir.mkdirs()
+        val target = file(copy.url)
+        check(target.exists() || (dir.listFiles()?.count { it.extension == "json" } ?: 0) < 40) {
+            "Offline library is full"
         }
+        val atomic = AtomicFile(target)
+        val stream = atomic.startWrite()
+        try {
+            val a = copy.article
+            stream.write(
+                JSONObject()
+                    .put("url", copy.url)
+                    .put("title", a.title.take(2000))
+                    .put("byline", a.byline.take(2000))
+                    .put("text", a.content.take(120000))
+                    .toString()
+                    .toByteArray(),
+            )
+            atomic.finishWrite(stream)
+            revisions.value++
+        } catch (e: Exception) {
+            atomic.failWrite(stream)
+            throw e
+        }
+    }
 
-    suspend fun copies(): List<ReadingCopy> =
-        withContext(Dispatchers.IO) {
-            dir.listFiles()
-                .orEmpty()
-                .filter { it.extension == "json" }
-                .sortedByDescending { it.lastModified() }
-                .take(40)
-                .mapNotNull { f ->
-                    runCatching {
-                        val o = JSONObject(AtomicFile(f).openRead().bufferedReader().use { it.readText() })
-                        ReadingCopy(
-                            o.getString("url"),
-                            ReaderArticle(
-                                o.getString("title"),
-                                o.optString("byline"),
-                                o.getString("text"),
-                            ),
-                        )
-                    }
-                        .getOrNull()
+    suspend fun copies(): List<ReadingCopy> = onDisk {
+        dir.listFiles()
+            .orEmpty()
+            .filter { it.extension == "json" }
+            .sortedByDescending { it.lastModified() }
+            .take(40)
+            .mapNotNull { f ->
+                runCatching {
+                    val o = JSONObject(AtomicFile(f).openRead().bufferedReader().use { it.readText() })
+                    ReadingCopy(
+                        o.getString("url"),
+                        ReaderArticle(
+                            o.getString("title"),
+                            o.optString("byline"),
+                            o.getString("text"),
+                        ),
+                    )
                 }
-        }
+                    .getOrNull()
+            }
+    }
 
-    suspend fun remove(url: String) = withContext(Dispatchers.IO) { AtomicFile(file(url)).delete() }
+    suspend fun remove(url: String) = onDisk {
+        AtomicFile(file(url)).delete()
+        revisions.value++
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,7 +105,8 @@ internal class ReadingLibrary(context: Context, profile: String) {
 internal fun ReadingScreen(library: ReadingLibrary, open: (ReadingCopy) -> Unit, back: () -> Unit) {
     var entries by remember { mutableStateOf<List<ReadingCopy>?>(null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(library) { entries = library.copies() }
+    val revision by library.revision.collectAsState()
+    LaunchedEffect(library, revision) { entries = library.copies() }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -125,7 +139,6 @@ internal fun ReadingScreen(library: ReadingLibrary, open: (ReadingCopy) -> Unit,
                                 onClick = {
                                     scope.launch {
                                         library.remove(copy.url)
-                                        entries = library.copies()
                                     }
                                 },
                             ) {
