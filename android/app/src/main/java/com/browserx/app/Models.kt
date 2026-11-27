@@ -45,7 +45,9 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val blockedCount: Int = 0,
-    val blockedDomains: List<String> = emptyList()
+    val blockedDomains: List<String> = emptyList(),
+    /** Non-null when the main frame failed to load; shown as an error card over the page. */
+    val errorText: String? = null
 )
 
 data class BookmarkItem(

@@ -1,11 +1,14 @@
 package com.browserx.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.print.PrintAttributes
@@ -14,6 +17,7 @@ import android.speech.tts.TextToSpeech
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -22,21 +26,40 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.util.Locale
 import java.util.UUID
+
+/** A download the WebView asked for, waiting on the legacy storage permission. */
+private data class PendingDownload(
+    val url: String,
+    val userAgent: String?,
+    val contentDisposition: String?,
+    val mimeType: String?
+)
 
 private enum class ActiveScreen {
     BROWSER,
@@ -128,6 +151,17 @@ fun BrowserXApp(
     var readerArticle by remember { mutableStateOf<ReaderArticle?>(null) }
     var isSpeaking by remember { mutableStateOf(false) }
 
+    // Toolbar that slides away while the page is scrolled down (Candy-style).
+    val chromeHidden = remember { mutableStateOf(false) }
+
+    // In-app update state.
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    val uiScope = rememberCoroutineScope()
+
+    // Downloads on Android 9 and older need the WRITE_EXTERNAL_STORAGE runtime permission.
+    var pendingDownload by remember { mutableStateOf<PendingDownload?>(null) }
+
     fun updateTab(id: String, transform: (BrowserTab) -> BrowserTab) {
         val idx = tabs.indexOfFirst { it.id == id }
         if (idx != -1) {
@@ -137,11 +171,137 @@ fun BrowserXApp(
 
     fun navigateTab(tabId: String, rawInput: String) {
         var resolved = resolveInputToUrl(rawInput, settings.searchEngine)
+        if (resolved.isBlank()) return
         if (settings.httpsOnlyEnabled && resolved.startsWith("http://")) {
             resolved = "https://" + resolved.removePrefix("http://")
         }
-        updateTab(tabId) { it.copy(url = resolved, blockedCount = 0, blockedDomains = emptyList()) }
-        webViews[tabId]?.loadUrl(resolved)
+        // Navigating away from the start page starts a fresh history, so Back returns home.
+        val startingFromHome = tabs.find { it.id == tabId }?.url?.isBlank() ?: true
+        updateTab(tabId) {
+            it.copy(url = resolved, blockedCount = 0, blockedDomains = emptyList(), errorText = null)
+        }
+        chromeHidden.value = false
+        webViews[tabId]?.let { wv ->
+            if (startingFromHome) wv.clearHistory()
+            wv.loadUrl(resolved)
+        }
+    }
+
+    /** Shows the start page for [tabId] without destroying the tab. */
+    fun goHome(tabId: String) {
+        webViews[tabId]?.stopLoading()
+        chromeHidden.value = false
+        updateTab(tabId) {
+            it.copy(
+                url = "",
+                title = "New Tab",
+                isLoading = false,
+                progress = 0,
+                canGoBack = false,
+                canGoForward = false,
+                blockedCount = 0,
+                blockedDomains = emptyList(),
+                errorText = null
+            )
+        }
+    }
+
+    fun startDownload(request: PendingDownload) {
+        val fileName = URLUtil.guessFileName(request.url, request.contentDisposition, request.mimeType)
+        val req = DownloadManager.Request(Uri.parse(request.url)).apply {
+            request.mimeType?.let { setMimeType(it) }
+            request.userAgent?.let { addRequestHeader("User-Agent", it) }
+            setTitle(fileName)
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        }
+        try {
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val dlId = dm.enqueue(req)
+            downloads = listOf(DownloadItem(dlId, fileName, request.url)) + downloads
+            store.saveDownloads(downloads)
+            Toast.makeText(context, "Downloading $fileName", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val request = pendingDownload
+        pendingDownload = null
+        if (granted && request != null) {
+            startDownload(request)
+        } else if (!granted) {
+            Toast.makeText(context, "Storage permission is needed to save downloads", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun installReadyUpdate() {
+        val ready = updateState as? UpdateState.Ready ?: return
+        if (Updater.canInstallPackages(context)) {
+            try {
+                context.startActivity(Updater.installIntent(context, ready.file))
+            } catch (e: Exception) {
+                Toast.makeText(context, "Could not open the installer: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(context, "Allow BrowserX to install apps, then tap Install again", Toast.LENGTH_LONG).show()
+            context.startActivity(Updater.installPermissionIntent(context))
+        }
+    }
+
+    fun checkForUpdates(manual: Boolean) {
+        if (updateState is UpdateState.Checking ||
+            updateState is UpdateState.Downloading ||
+            updateState is UpdateState.Ready
+        ) {
+            return
+        }
+        updateState = UpdateState.Checking
+        uiScope.launch {
+            val result: UpdateState = withContext(Dispatchers.IO) {
+                try {
+                    val info = Updater.fetchLatest(BuildConfig.VERSION_CODE)
+                    if (info == null) UpdateState.UpToDate else UpdateState.Available(info)
+                } catch (e: Exception) {
+                    UpdateState.Failed(e.message ?: "Could not check for updates")
+                }
+            }
+            updateState = result
+            when {
+                result is UpdateState.Available -> showUpdateDialog = true
+                manual && result is UpdateState.UpToDate -> Toast.makeText(
+                    context,
+                    "BrowserX is up to date (build ${BuildConfig.VERSION_CODE})",
+                    Toast.LENGTH_SHORT
+                ).show()
+                manual && result is UpdateState.Failed -> Toast.makeText(
+                    context,
+                    "Update check failed: ${result.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    fun downloadUpdate(info: UpdateInfo) {
+        updateState = UpdateState.Downloading(info, 0)
+        uiScope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    Updater.downloadApk(context, info) { percent ->
+                        updateState = UpdateState.Downloading(info, percent)
+                    }
+                }
+                updateState = UpdateState.Ready(file)
+                installReadyUpdate()
+            } catch (e: Exception) {
+                updateState = UpdateState.Failed(e.message ?: "Download failed")
+                Toast.makeText(context, "Update failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     fun createTab(isPrivate: Boolean, url: String = "") {
@@ -174,13 +334,16 @@ fun BrowserXApp(
         }
     }
 
+    // Back: close whatever is open -> go back in the page history -> go home -> leave the app.
     BackHandler(
         enabled = activeScreen != ActiveScreen.BROWSER ||
             showTabOverview ||
             showPrivacyXRay ||
             showFindInPage ||
+            showUpdateDialog ||
             readerArticle != null ||
-            activeTab.canGoBack
+            activeTab.canGoBack ||
+            activeTab.url.isNotBlank()
     ) {
         when {
             readerArticle != null -> {
@@ -188,6 +351,7 @@ fun BrowserXApp(
                 isSpeaking = false
                 readerArticle = null
             }
+            showUpdateDialog -> showUpdateDialog = false
             showPrivacyXRay -> showPrivacyXRay = false
             showTabOverview -> showTabOverview = false
             showFindInPage -> {
@@ -196,6 +360,23 @@ fun BrowserXApp(
             }
             activeScreen != ActiveScreen.BROWSER -> activeScreen = ActiveScreen.BROWSER
             activeTab.canGoBack -> webViews[activeTab.id]?.goBack()
+            else -> goHome(activeTab.id)
+        }
+    }
+
+    // Silent update check once per launch; the dialog only appears when something is newer.
+    LaunchedEffect(Unit) {
+        delay(1500)
+        checkForUpdates(manual = false)
+    }
+
+    // "Force dark web" must apply to pages that are already open.
+    LaunchedEffect(settings.forceDarkWebEnabled) {
+        webViews.values.forEach { wv ->
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, settings.forceDarkWebEnabled)
+                wv.reload()
+            }
         }
     }
 
@@ -269,6 +450,18 @@ fun BrowserXApp(
                     settings = it
                     store.saveSettings(it)
                 },
+                appVersion = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                updateState = updateState,
+                onCheckForUpdates = { checkForUpdates(manual = true) },
+                onInstallUpdate = {
+                    val available = updateState as? UpdateState.Available
+                    if (available != null) downloadUpdate(available.info) else installReadyUpdate()
+                },
+                onOpenReleases = {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(Updater.RELEASES_PAGE))
+                    )
+                },
                 onClearBrowsingData = {
                     CookieManager.getInstance().removeAllCookies(null)
                     webViews.values.forEach { it.clearCache(true) }
@@ -286,6 +479,7 @@ fun BrowserXApp(
                         tab = activeTab,
                         tabCount = tabs.size,
                         isAtTop = settings.addressBarPosition == AddressBarPosition.TOP,
+                        isChromeHidden = chromeHidden.value,
                         isBookmarked = isBookmarked,
                         hapticsEnabled = settings.hapticsEnabled,
                         onNavigate = { input -> navigateTab(activeTab.id, input) },
@@ -367,7 +561,8 @@ fun BrowserXApp(
                         onOpenDownloads = { activeScreen = ActiveScreen.DOWNLOADS },
                         onOpenToppings = { activeScreen = ActiveScreen.TOPPINGS },
                         onOpenProfiles = { activeScreen = ActiveScreen.PROFILES },
-                        onOpenSettings = { activeScreen = ActiveScreen.SETTINGS }
+                        onOpenSettings = { activeScreen = ActiveScreen.SETTINGS },
+                        onCheckForUpdates = { checkForUpdates(manual = true) }
                     )
                 }
 
@@ -376,6 +571,7 @@ fun BrowserXApp(
                         .fillMaxSize()
                         .statusBarsPadding()
                         .navigationBarsPadding(),
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
                         Column {
                             if (settings.addressBarPosition == AddressBarPosition.TOP) {
@@ -405,6 +601,16 @@ fun BrowserXApp(
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
+                        // While the toolbar is scrolled away, tapping the top edge brings it back.
+                        if (chromeHidden.value && activeTab.url.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .height(20.dp)
+                                    .clickable { chromeHidden.value = false }
+                            )
+                        }
                         if (activeTab.url.isBlank()) {
                             CandyStartPage(
                                 profile = activeProfile,
@@ -439,19 +645,31 @@ fun BrowserXApp(
                                                 }
 
                                                 setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-                                                    val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
-                                                    val req = DownloadManager.Request(Uri.parse(url)).apply {
-                                                        setMimeType(mimetype)
-                                                        addRequestHeader("User-Agent", userAgent)
-                                                        setTitle(fileName)
-                                                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                                        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                                    val request = PendingDownload(url, userAgent, contentDisposition, mimetype)
+                                                    val needsLegacyPermission =
+                                                        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                                                            ContextCompat.checkSelfPermission(
+                                                                ctx,
+                                                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                                            ) != PackageManager.PERMISSION_GRANTED
+                                                    if (needsLegacyPermission) {
+                                                        pendingDownload = request
+                                                        storagePermissionLauncher.launch(
+                                                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                                        )
+                                                    } else {
+                                                        startDownload(request)
                                                     }
-                                                    val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                                    val dlId = dm.enqueue(req)
-                                                    downloads = listOf(DownloadItem(dlId, fileName, url)) + downloads
-                                                    store.saveDownloads(downloads)
-                                                    Toast.makeText(ctx, "Downloading $fileName", Toast.LENGTH_SHORT).show()
+                                                }
+
+                                                // Candy-style chrome: slide the toolbar away while scrolling down.
+                                                setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                                                    val delta = scrollY - oldScrollY
+                                                    if (delta > 10 && scrollY > 150) {
+                                                        if (!chromeHidden.value) chromeHidden.value = true
+                                                    } else if (delta < -10) {
+                                                        if (chromeHidden.value) chromeHidden.value = false
+                                                    }
                                                 }
 
                                                 webViewClient = object : WebViewClient() {
@@ -480,17 +698,38 @@ fun BrowserXApp(
                                                     }
 
                                                     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                                        if (url == null || url == "about:blank") return
+                                                        chromeHidden.value = false
                                                         updateTab(activeTab.id) {
                                                             it.copy(
-                                                                url = url ?: it.url,
+                                                                url = url,
                                                                 isLoading = true,
                                                                 canGoBack = view?.canGoBack() == true,
-                                                                canGoForward = view?.canGoForward() == true
+                                                                canGoForward = view?.canGoForward() == true,
+                                                                errorText = null
+                                                            )
+                                                        }
+                                                    }
+
+                                                    override fun onReceivedError(
+                                                        view: WebView?,
+                                                        request: WebResourceRequest?,
+                                                        error: WebResourceError?
+                                                    ) {
+                                                        if (request?.isForMainFrame != true) return
+                                                        val description = error?.description?.toString().orEmpty()
+                                                        updateTab(activeTab.id) {
+                                                            it.copy(
+                                                                isLoading = false,
+                                                                errorText = description.ifBlank {
+                                                                    "This page could not be loaded"
+                                                                }
                                                             )
                                                         }
                                                     }
 
                                                     override fun onPageFinished(view: WebView?, url: String?) {
+                                                        if (url == null || url == "about:blank") return
                                                         if (settings.cookieBannerHiderEnabled) {
                                                             view?.evaluateJavascript(AdBlockEngine.COOKIE_BANNER_HIDER_JS, null)
                                                         }
@@ -506,7 +745,9 @@ fun BrowserXApp(
                                                                 canGoForward = view?.canGoForward() == true
                                                             )
                                                         }
-                                                        if (!activeTab.isPrivate && pageUrl.startsWith("http")) {
+                                                        if (!activeTab.isPrivate && pageUrl.startsWith("http") &&
+                                                            history.firstOrNull()?.url != pageUrl
+                                                        ) {
                                                             history = (listOf(HistoryItem(pageUrl, pageTitle)) + history).take(500)
                                                             store.saveHistory(history)
                                                         }
@@ -525,10 +766,21 @@ fun BrowserXApp(
                                                     }
                                                 }
 
-                                                loadUrl(activeTab.url)
+                                                if (this.url != activeTab.url) loadUrl(activeTab.url)
                                             }
                                         }
                                     }
+                                )
+                            }
+                            // Failed page loads get a readable card instead of a blank screen.
+                            activeTab.errorText?.let { message ->
+                                PageErrorCard(
+                                    message = message,
+                                    onRetry = {
+                                        updateTab(activeTab.id) { it.copy(errorText = null) }
+                                        webViews[activeTab.id]?.reload()
+                                    },
+                                    onHome = { goHome(activeTab.id) }
                                 )
                             }
                         }
@@ -604,6 +856,14 @@ fun BrowserXApp(
                     isSpeaking = false
                     readerArticle = null
                 }
+            )
+        }
+
+        if (showUpdateDialog) {
+            UpdateDialog(
+                state = updateState,
+                onDownload = { (updateState as? UpdateState.Available)?.let { downloadUpdate(it) } },
+                onDismiss = { showUpdateDialog = false }
             )
         }
     }

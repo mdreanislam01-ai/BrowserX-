@@ -339,6 +339,11 @@ fun SettingsScreen(
     settings: AppSettings,
     onUpdateSettings: (AppSettings) -> Unit,
     onClearBrowsingData: () -> Unit,
+    appVersion: String,
+    updateState: UpdateState,
+    onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onOpenReleases: () -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -444,6 +449,144 @@ fun SettingsScreen(
                     Text("Clear Cookies, Cache & History")
                 }
             }
+            item {
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "About & Updates",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            item {
+                ElevatedCard(shape = RoundedCornerShape(20.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    "BrowserX³",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "Version $appVersion",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(
+                                Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        val status = when (updateState) {
+                            is UpdateState.Checking -> "Checking GitHub for a newer build…"
+                            is UpdateState.UpToDate -> "You are on the latest build."
+                            is UpdateState.Available -> "New build ${updateState.info.versionName} is available."
+                            is UpdateState.Downloading -> "Downloading update… ${updateState.percent}%"
+                            is UpdateState.Ready -> "Update downloaded — tap Install to finish."
+                            is UpdateState.Failed -> "Check failed: ${updateState.message}"
+                            UpdateState.Idle -> "Updates download inside the app — no repeat downloads."
+                        }
+                        Text(
+                            status,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (updateState is UpdateState.Downloading) {
+                            LinearProgressIndicator(
+                                progress = { updateState.percent / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = onCheckForUpdates,
+                                enabled = updateState !is UpdateState.Checking &&
+                                    updateState !is UpdateState.Downloading,
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Check for updates")
+                            }
+                            when (updateState) {
+                                is UpdateState.Available -> Button(
+                                    onClick = onInstallUpdate,
+                                    shape = RoundedCornerShape(20.dp)
+                                ) { Text("Download & install") }
+                                is UpdateState.Ready -> Button(
+                                    onClick = onInstallUpdate,
+                                    shape = RoundedCornerShape(20.dp)
+                                ) { Text("Install") }
+                                else -> Unit
+                            }
+                        }
+
+                        TextButton(onClick = onOpenReleases) {
+                            Text("Open the release page")
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+/** Shown when a newer release exists (also used by the launch-time silent check). */
+@Composable
+fun UpdateDialog(
+    state: UpdateState,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val info = when (state) {
+        is UpdateState.Available -> state.info
+        is UpdateState.Downloading -> state.info
+        else -> null
+    } ?: return
+
+    val downloading = state is UpdateState.Downloading
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
+        title = { Text(if (downloading) "Downloading update…" else "Update available") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("BrowserX ${info.versionName} is ready to install.")
+                if (downloading) {
+                    LinearProgressIndicator(
+                        progress = { (state as UpdateState.Downloading).percent / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (info.notes.isNotBlank()) {
+                    Text(
+                        info.notes.take(400),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDownload, enabled = !downloading) {
+                Text(if (downloading) "Downloading…" else "Download & install")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(if (downloading) "Hide" else "Later") }
+        }
+    )
 }

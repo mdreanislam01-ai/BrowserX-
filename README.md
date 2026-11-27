@@ -2,30 +2,42 @@
 
 The user's own Android browser app — native Jetpack Compose + Android System WebView.
 
-**v1.0.0 (Build 1)** — System WebView engine only.
+**v1.1.0** — System WebView engine only.
 
-## Features (v1)
-- Tabs: open, switch, close, tab overview
+## Features
+- Tabs: open, switch, close, pin, tab overview (cover-flow / grid / list)
+- Candy-style toolbar on top: the search pill grows into a full-width editor and slides
+  away while you scroll down (Bottom layout still available in Settings)
 - Address bar with Google search (default) — DuckDuckGo and Bing in Settings
-- Toolbar on top by default: search pill, tab counter and 3-dot menu
-  (Bottom layout still available in Settings → Address Bar Position)
-- Bookmarks and history (start empty)
-- Downloads via Android DownloadManager, with a downloads list
-- Simple ad-block (built-in ad/tracker host list)
-- Private tabs (no history saved)
-- Dark mode: system / light / dark
+- Bookmarks and history (start empty), downloads with a downloads list
+- Simple ad-block (built-in ad/tracker host list), cookie-banner hider, HTTPS-Only mode
+- Private tabs (no history saved), Profiles, Toppings, Privacy X-Ray
+- Reader Studio with read-aloud, Find in page, Desktop site, Print / Save PDF
+- Dark mode: system / light / dark, Material You dynamic colour
 - Home page with search + quick links
-- Back / forward / refresh / share
-- Swipe left/right on the address bar to switch tabs
+- Back button: previous page → home page → exit app
+- In-app updates: Settings → About & Updates (or the 3-dot menu) checks GitHub, downloads
+  the new APK and opens the system installer — no repeat downloads by hand
 
-## v2 (planned)
-GeckoView engine option + Firefox extension install (XPI), engine switching with checkpoint/restart.
+## In-app updates
+The app reads the newest published GitHub release and compares its `versionCode` (written into
+the release notes by the CI workflow) with the installed build. When a newer build exists it
+downloads the APK into app storage and hands it to Android's package installer.
+
+Notes:
+- Android always shows the system installer confirmation once — a browser cannot install
+  silently without device-owner privileges.
+- Updates only install over an existing copy when both APKs share the same signing key.
+  That is why every CI build is signed with the bundled `android/app/browserx-signing.p12`
+  debug key instead of a throw-away key. To use your own key, add a git-ignored
+  `keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) and rebuild —
+  but then the first install needs one manual uninstall.
 
 ## Build
-GitHub Actions builds the debug APK on every push and publishes it to the
-`browserx-v1.0.0` release. Download:
+GitHub Actions builds the debug APK on every push and publishes it as the
+`browserx-latest` release. Download the newest build:
 
-https://github.com/mdreanislam01-ai/BrowserX-/releases/download/browserx-v1.0.0/app-debug.apk
+https://github.com/mdreanislam01-ai/BrowserX-/releases/latest/download/app-debug.apk
 
 ## License note
 BrowserX³ is written from scratch for this project. Candy Browser
