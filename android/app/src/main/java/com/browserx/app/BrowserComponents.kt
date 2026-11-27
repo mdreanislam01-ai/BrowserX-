@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 fun CandyAddressBar(
     tab: BrowserTab,
     tabCount: Int,
+    isAtTop: Boolean,
     isBookmarked: Boolean,
     hapticsEnabled: Boolean,
     onNavigate: (String) -> Unit,
@@ -108,13 +109,16 @@ fun CandyAddressBar(
                     }
                 )
             }
-            .pointerInput(tab.id) {
+            .pointerInput(tab.id, isAtTop) {
                 var totalDragY = 0f
                 detectVerticalDragGestures(
                     onDragStart = { totalDragY = 0f },
                     onVerticalDrag = { _, dragAmount -> totalDragY += dragAmount },
                     onDragEnd = {
-                        if (totalDragY < -60f) {
+                        // Toolbar at the top opens tab overview on a downward fling,
+                        // toolbar at the bottom opens it on an upward fling.
+                        val triggered = if (isAtTop) totalDragY > 60f else totalDragY < -60f
+                        if (triggered) {
                             if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             onOpenTabOverview()
                         }

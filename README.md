@@ -7,6 +7,8 @@ The user's own Android browser app — native Jetpack Compose + Android System W
 ## Features (v1)
 - Tabs: open, switch, close, tab overview
 - Address bar with Google search (default) — DuckDuckGo and Bing in Settings
+- Toolbar on top by default: search pill, tab counter and 3-dot menu
+  (Bottom layout still available in Settings → Address Bar Position)
 - Bookmarks and history (start empty)
 - Downloads via Android DownloadManager, with a downloads list
 - Simple ad-block (built-in ad/tracker host list)

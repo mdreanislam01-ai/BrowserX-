@@ -285,6 +285,7 @@ fun BrowserXApp(
                     CandyAddressBar(
                         tab = activeTab,
                         tabCount = tabs.size,
+                        isAtTop = settings.addressBarPosition == AddressBarPosition.TOP,
                         isBookmarked = isBookmarked,
                         hapticsEnabled = settings.hapticsEnabled,
                         onNavigate = { input -> navigateTab(activeTab.id, input) },

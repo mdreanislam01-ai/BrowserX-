@@ -9,11 +9,28 @@ class PrefsStore(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("browserx_prefs", Context.MODE_PRIVATE)
 
+    private companion object {
+        const val KEY_ADDRESS_BAR_POS = "address_bar_pos"
+        const val KEY_TOOLBAR_TOP_MIGRATED = "toolbar_top_migrated_v1"
+    }
+
     fun loadSettings(): AppSettings {
+        // One-time layout migration: the toolbar (search pill, tab counter, 3-dot menu)
+        // now lives at the top by default. Runs once so an old "bottom" value saved by a
+        // previous version does not keep it pinned to the bottom.
+        if (!prefs.getBoolean(KEY_TOOLBAR_TOP_MIGRATED, false)) {
+            prefs.edit()
+                .putInt(KEY_ADDRESS_BAR_POS, AddressBarPosition.DEFAULT.ordinal)
+                .putBoolean(KEY_TOOLBAR_TOP_MIGRATED, true)
+                .apply()
+        }
+
         return AppSettings(
             themeMode = ThemeMode.entries.getOrElse(prefs.getInt("theme_mode", 0)) { ThemeMode.SYSTEM },
             dynamicColor = prefs.getBoolean("dynamic_color", true),
-            addressBarPosition = AddressBarPosition.entries.getOrElse(prefs.getInt("address_bar_pos", 0)) { AddressBarPosition.BOTTOM },
+            addressBarPosition = AddressBarPosition.entries.getOrElse(
+                prefs.getInt(KEY_ADDRESS_BAR_POS, AddressBarPosition.DEFAULT.ordinal)
+            ) { AddressBarPosition.DEFAULT },
             tabViewMode = TabViewMode.entries.getOrElse(prefs.getInt("tab_view_mode", 0)) { TabViewMode.COVER_FLOW },
             searchEngine = SearchEngine.entries.getOrElse(prefs.getInt("search_engine", 0)) { SearchEngine.GOOGLE },
             adBlockEnabled = prefs.getBoolean("ad_block", true),
@@ -28,7 +45,7 @@ class PrefsStore(context: Context) {
         prefs.edit()
             .putInt("theme_mode", s.themeMode.ordinal)
             .putBoolean("dynamic_color", s.dynamicColor)
-            .putInt("address_bar_pos", s.addressBarPosition.ordinal)
+            .putInt(KEY_ADDRESS_BAR_POS, s.addressBarPosition.ordinal)
             .putInt("tab_view_mode", s.tabViewMode.ordinal)
             .putInt("search_engine", s.searchEngine.ordinal)
             .putBoolean("ad_block", s.adBlockEnabled)
