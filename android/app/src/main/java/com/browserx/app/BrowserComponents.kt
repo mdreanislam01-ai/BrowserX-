@@ -2,14 +2,30 @@ package com.browserx.app
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,6 +79,7 @@ fun CandyAddressBar(
     tabCount: Int,
     isAtTop: Boolean,
     isChromeHidden: Boolean,
+    glowPulse: Int,
     isBookmarked: Boolean,
     hapticsEnabled: Boolean,
     onNavigate: (String) -> Unit,
@@ -112,6 +129,51 @@ fun CandyAddressBar(
         label = "barElevation"
     )
     val barShape = RoundedCornerShape(lerp(30.dp, 16.dp, editProgress))
+
+    // --- Candy light ring -----------------------------------------------------------------
+    // A band of coloured lights travels around the pill: bright while loading or editing,
+    // a gentle shimmer at rest, and a short flash every time the page is scrolled.
+    val glowTransition = rememberInfiniteTransition(label = "candyLightRing")
+    val glowPhase by glowTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "glowPhase"
+    )
+    var scrollGlow by remember { mutableStateOf(0f) }
+    LaunchedEffect(glowPulse) {
+        if (glowPulse > 0) {
+            animate(
+                initialValue = 1f,
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 1100, easing = LinearEasing)
+            ) { value, _ -> scrollGlow = value }
+        }
+    }
+    val baseGlow = when {
+        isEditing -> 1f
+        tab.isLoading -> 0.95f
+        else -> 0.30f
+    }
+    val glowStrength = maxOf(baseGlow, scrollGlow)
+    val glowBrush: Brush? = if (glowStrength > 0.04f) {
+        RotatingGlowBrush(
+            colors = listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary,
+                MaterialTheme.colorScheme.secondary,
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
+            ),
+            phase = glowPhase
+        )
+    } else {
+        null
+    }
+    val glowCorner = lerp(30.dp, 16.dp, editProgress)
     val idleAlpha by animateFloatAsState(
         targetValue = if (isEditing) 0f else 1f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
@@ -154,6 +216,31 @@ fun CandyAddressBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = outerPadding, vertical = 8.dp)
+                .drawWithContent {
+                    drawContent()
+                    if (glowBrush != null) {
+                        val ring = (1.4f + 1.1f * glowStrength).dp.toPx()
+                        val radius = glowCorner.toPx()
+                        drawRoundRect(
+                            brush = glowBrush,
+                            topLeft = Offset(ring / 2f, ring / 2f),
+                            size = Size(size.width - ring, size.height - ring),
+                            cornerRadius = CornerRadius(radius, radius),
+                            style = Stroke(width = ring),
+                            alpha = 0.45f + 0.55f * glowStrength
+                        )
+                        // soft bloom leaking out of the pill
+                        val bloom = 10.dp.toPx()
+                        drawRoundRect(
+                            brush = glowBrush,
+                            topLeft = Offset(-bloom / 2.5f, -bloom / 2.5f),
+                            size = Size(size.width + bloom / 1.25f, size.height + bloom / 1.25f),
+                            cornerRadius = CornerRadius(radius + bloom / 2.5f, radius + bloom / 2.5f),
+                            style = Stroke(width = bloom),
+                            alpha = 0.18f * glowStrength
+                        )
+                    }
+                }
                 .pointerInput(tab.id, isAtTop) {
                     var totalDragX = 0f
                     detectHorizontalDragGestures(
@@ -1204,5 +1291,25 @@ fun PageErrorCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * Gradient that repeats, so a band of coloured "lights" travels along the address pill.
+ * [phase] is driven by an infinite transition (0..1).
+ */
+private class RotatingGlowBrush(
+    private val colors: List<Color>,
+    private val phase: Float
+) : ShaderBrush() {
+    override fun createShader(size: Size): Shader {
+        val travel = (size.width + size.height).coerceAtLeast(1f)
+        val shift = -travel + phase * travel * 2.6f
+        return LinearGradientShader(
+            from = Offset(shift, 0f),
+            to = Offset(shift + travel * 0.9f, size.height),
+            colors = colors,
+            tileMode = TileMode.Repeated
+        )
     }
 }

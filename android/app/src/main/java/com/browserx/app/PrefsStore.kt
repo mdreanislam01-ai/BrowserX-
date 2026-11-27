@@ -37,7 +37,8 @@ class PrefsStore(context: Context) {
             cookieBannerHiderEnabled = prefs.getBoolean("cookie_hider", true),
             httpsOnlyEnabled = prefs.getBoolean("https_only", false),
             forceDarkWebEnabled = prefs.getBoolean("force_dark_web", false),
-            hapticsEnabled = prefs.getBoolean("haptics", true)
+            hapticsEnabled = prefs.getBoolean("haptics", true),
+            hideToolbarOnScroll = prefs.getBoolean("hide_toolbar_on_scroll", false)
         )
     }
 
@@ -53,6 +54,7 @@ class PrefsStore(context: Context) {
             .putBoolean("https_only", s.httpsOnlyEnabled)
             .putBoolean("force_dark_web", s.forceDarkWebEnabled)
             .putBoolean("haptics", s.hapticsEnabled)
+            .putBoolean("hide_toolbar_on_scroll", s.hideToolbarOnScroll)
             .apply()
     }
 

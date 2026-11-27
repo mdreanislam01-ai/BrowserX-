@@ -340,6 +340,11 @@ fun SettingsScreen(
     onUpdateSettings: (AppSettings) -> Unit,
     onClearBrowsingData: () -> Unit,
     appVersion: String,
+    filterHostCount: Int,
+    builtInFilterCount: Int,
+    filterUpdating: Boolean,
+    onUpdateFilters: () -> Unit,
+    onClearFilters: () -> Unit,
     updateState: UpdateState,
     onCheckForUpdates: () -> Unit,
     onInstallUpdate: () -> Unit,
@@ -447,6 +452,99 @@ fun SettingsScreen(
                     Icon(Icons.Default.DeleteSweep, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("Clear Cookies, Cache & History")
+                }
+            }
+            item {
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Ad blocking",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            item {
+                ElevatedCard(shape = RoundedCornerShape(20.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Block ads & trackers", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Removes ad requests and hides leftover ad slots",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = settings.adBlockEnabled,
+                                onCheckedChange = { onUpdateSettings(settings.copy(adBlockEnabled = it)) }
+                            )
+                        }
+                        HorizontalDivider()
+                        Text(
+                            "$builtInFilterCount built-in domains" +
+                                if (filterHostCount > 0) " + $filterHostCount downloaded" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            if (filterHostCount > 0) {
+                                "Extra filter lists are active. Update them when sites change."
+                            } else {
+                                "Download free EasyList / EasyPrivacy filter lists for stronger blocking."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (filterUpdating) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = onUpdateFilters,
+                                enabled = !filterUpdating,
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text(if (filterHostCount > 0) "Update filters" else "Download filters")
+                            }
+                            if (filterHostCount > 0) {
+                                OutlinedButton(
+                                    onClick = onClearFilters,
+                                    enabled = !filterUpdating,
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text("Remove")
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Hide toolbar while scrolling")
+                                Text(
+                                    "Off: the search bar stays pinned on top",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = settings.hideToolbarOnScroll,
+                                onCheckedChange = { onUpdateSettings(settings.copy(hideToolbarOnScroll = it)) }
+                            )
+                        }
+                    }
                 }
             }
             item {
