@@ -1,0 +1,80 @@
+name: Build BrowserX APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android-apk.yml'
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Configure Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools" >> "$GITHUB_PATH"
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Unit tests
+        run: |
+          gradle --no-daemon :app:testDebugUnitTest --console=plain 2>&1 | tee test.log
+          tail -n 15 test.log
+      - name: Build debug APK
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug --stacktrace --console=plain > build.log 2>&1
+          result=$?
+          if [ "$result" -ne 0 ]; then
+            tail -n 25 build.log
+            errors=$(grep -E -i 'e: file|e: [a-z]|error:|unresolved reference|type mismatch|cannot infer|overload resolution|not enough information' build.log | sed 's#https://[^ ]*##g' | cut -c1-220)
+            head_summary=$(printf '%s\n' "$errors" | head -n 10 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')
+            tail_summary=$(printf '%s\n' "$errors" | tail -n 10 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')
+            echo "::error::first errors: $head_summary"
+            echo "::error::last errors: $tail_summary"
+            exit "$result"
+          fi
+          tail -n 25 build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BrowserX-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Publish installable APK download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: browserx-v1.0.0
+          name: BrowserX³ Android APK v1.0.0
+          target_commitish: ${{ github.sha }}
+          body: |
+            Installable BrowserX³ Android debug APK.
+
+            v1.0.0 — first version (System WebView engine):
+            - Tabs: open, switch, close, tab overview
+            - Address bar with Google search (DuckDuckGo and Bing in Settings)
+            - Bookmarks and history (start empty)
+            - Downloads via Android DownloadManager, with a downloads list
+            - Simple ad-block (built-in ad/tracker host list)
+            - Private tabs (no history saved)
+            - Dark mode: system / light / dark
+            - Home page with search + quick links
+            - Back / forward / refresh / share
+            - Swipe left/right on the address bar to switch tabs
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+          overwrite_files: true
