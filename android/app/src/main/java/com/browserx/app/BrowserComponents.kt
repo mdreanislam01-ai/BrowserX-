@@ -2,7 +2,14 @@ package com.browserx.app
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,12 +47,14 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 
 @Composable
@@ -53,6 +62,7 @@ fun CandyAddressBar(
     tab: BrowserTab,
     tabCount: Int,
     isAtTop: Boolean,
+    isChromeHidden: Boolean,
     isBookmarked: Boolean,
     hapticsEnabled: Boolean,
     onNavigate: (String) -> Unit,
@@ -74,302 +84,445 @@ fun CandyAddressBar(
     onOpenDownloads: () -> Unit,
     onOpenToppings: () -> Unit,
     onOpenProfiles: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onCheckForUpdates: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var isEditing by remember(tab.id) { mutableStateOf(false) }
-    var inputText by remember(tab.id, tab.url) { mutableStateOf(tab.url) }
+    var inputText by remember(tab.id) { mutableStateOf(tab.url) }
     var menuExpanded by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+
+    // --- Candy-style morph -------------------------------------------------------------
+    // The pill starts as a narrow floating chip and springs open into a full-width editor.
+    val editProgress by animateFloatAsState(
+        targetValue = if (isEditing) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+        label = "editProgress"
+    )
+    val outerPadding by animateDpAsState(
+        targetValue = if (isEditing) 10.dp else 26.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "outerPadding"
+    )
+    val barElevation by animateDpAsState(
+        targetValue = if (isEditing) 12.dp else 4.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "barElevation"
+    )
+    val barShape = RoundedCornerShape(lerp(30.dp, 16.dp, editProgress))
+    val idleAlpha by animateFloatAsState(
+        targetValue = if (isEditing) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "idleAlpha"
+    )
+    val editorAlpha by animateFloatAsState(
+        targetValue = if (isEditing) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "editorAlpha"
+    )
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
             inputText = tab.url
             focusRequester.requestFocus()
+            keyboard?.show()
+        } else {
+            keyboard?.hide()
         }
     }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .pointerInput(tab.id) {
-                var totalDragX = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { totalDragX = 0f },
-                    onHorizontalDrag = { _, dragAmount -> totalDragX += dragAmount },
-                    onDragEnd = {
-                        if (totalDragX > 80f) {
-                            if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onSwipeTab(-1)
-                        } else if (totalDragX < -80f) {
-                            if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onSwipeTab(1)
-                        }
-                    }
-                )
-            }
-            .pointerInput(tab.id, isAtTop) {
-                var totalDragY = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { totalDragY = 0f },
-                    onVerticalDrag = { _, dragAmount -> totalDragY += dragAmount },
-                    onDragEnd = {
-                        // Toolbar at the top opens tab overview on a downward fling,
-                        // toolbar at the bottom opens it on an upward fling.
-                        val triggered = if (isAtTop) totalDragY > 60f else totalDragY < -60f
-                        if (triggered) {
-                            if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onOpenTabOverview()
-                        }
-                    }
-                )
-            },
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
-        tonalElevation = 6.dp,
-        shadowElevation = 4.dp
-    ) {
-        Column {
-            if (tab.isLoading && tab.progress in 1..99) {
-                LinearProgressIndicator(
-                    progress = { tab.progress / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.5.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.Transparent
-                )
-            }
+    fun submitInput() {
+        val text = inputText.trim()
+        isEditing = false
+        if (text.isNotEmpty()) onNavigate(text)
+    }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Privacy X-Ray Shield Button
-                IconButton(
-                    onClick = onOpenPrivacyXRay,
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    BadgedBox(
-                        badge = {
-                            if (tab.blockedCount > 0) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ) {
-                                    Text(
-                                        text = if (tab.blockedCount > 99) "99+" else "${tab.blockedCount}",
-                                        fontSize = 9.sp
-                                    )
-                                }
+    AnimatedVisibility(
+        visible = !isChromeHidden || isEditing,
+        enter = expandVertically(
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+            expandFrom = Alignment.Top
+        ) + fadeIn(),
+        exit = shrinkVertically(
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+            shrinkTowards = Alignment.Top
+        ) + fadeOut()
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = outerPadding, vertical = 8.dp)
+                .pointerInput(tab.id, isAtTop) {
+                    var totalDragX = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDragX = 0f },
+                        onHorizontalDrag = { _, dragAmount -> totalDragX += dragAmount },
+                        onDragEnd = {
+                            if (totalDragX > 90f) {
+                                if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSwipeTab(-1)
+                            } else if (totalDragX < -90f) {
+                                if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSwipeTab(1)
                             }
                         }
-                    ) {
-                        Icon(
-                            imageVector = if (tab.isPrivate) Icons.Default.VisibilityOff else Icons.Default.Shield,
-                            contentDescription = "Privacy X-Ray",
-                            tint = if (tab.isPrivate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    )
+                }
+                .pointerInput(tab.id, isAtTop) {
+                    var totalDragY = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { totalDragY = 0f },
+                        onVerticalDrag = { _, dragAmount -> totalDragY += dragAmount },
+                        onDragEnd = {
+                            // Top toolbar: pull down for the tab overview. Bottom toolbar: pull up.
+                            val triggered = if (isAtTop) totalDragY > 70f else totalDragY < -70f
+                            if (triggered && !isEditing) {
+                                if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onOpenTabOverview()
+                            }
+                        }
+                    )
+                },
+            shape = barShape,
+            color = if (isEditing) {
+                MaterialTheme.colorScheme.surface
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
+            },
+            tonalElevation = barElevation,
+            shadowElevation = barElevation
+        ) {
+            Column {
+                if (tab.isLoading && tab.progress in 1..99) {
+                    LinearProgressIndicator(
+                        progress = { tab.progress / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 3.dp)
+                            .height(2.5.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = Color.Transparent
+                    )
                 }
 
-                // URL / Search Pill
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { isEditing = true }
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.CenterStart
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .padding(horizontal = 6.dp)
                 ) {
-                    if (isEditing) {
-                        BasicTextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            singleLine = true,
-                            textStyle = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                            keyboardActions = KeyboardActions(
-                                onGo = {
-                                    isEditing = false
-                                    onNavigate(inputText)
-                                }
-                            ),
+                    // ---------- Idle pill: shield, site chip, reload, tabs, 3-dot ----------
+                    if (!isEditing) {
+                        Row(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                        )
-                    } else {
-                        val display = when {
-                            tab.url.isBlank() -> "Search or type URL"
-                            else -> hostOf(tab.url).ifBlank { tab.url }
-                        }
-                        Text(
-                            text = display,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (tab.url.isBlank())
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            else
-                                MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (tab.url.isBlank()) FontWeight.Normal else FontWeight.Medium
-                        )
-                    }
-                }
-
-                if (isEditing) {
-                    IconButton(
-                        onClick = {
-                            if (inputText.isNotEmpty()) inputText = "" else isEditing = false
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp))
-                    }
-                } else {
-                    if (tab.url.isNotBlank()) {
-                        IconButton(onClick = onReload, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = if (tab.isLoading) Icons.Default.Close else Icons.Default.Refresh,
-                                contentDescription = "Reload",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    // Tab Count Pill
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 4.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(
-                                width = 1.5.dp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .clickable { onOpenTabOverview() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "$tabCount",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    // Overflow Menu
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Menu", modifier = Modifier.size(20.dp))
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false }
+                                .fillMaxSize()
+                                .alpha(idleAlpha),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Quick nav row inside menu
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
+                            IconButton(
+                                onClick = onOpenPrivacyXRay,
+                                modifier = Modifier.size(38.dp)
                             ) {
-                                IconButton(onClick = { menuExpanded = false; onBack() }, enabled = tab.canGoBack) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                }
-                                IconButton(onClick = { menuExpanded = false; onForward() }, enabled = tab.canGoForward) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
-                                }
-                                IconButton(onClick = { menuExpanded = false; onToggleBookmark() }, enabled = tab.url.isNotBlank()) {
+                                BadgedBox(
+                                    badge = {
+                                        if (tab.blockedCount > 0) {
+                                            Badge(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                            ) {
+                                                Text(
+                                                    text = if (tab.blockedCount > 99) "99+" else "${tab.blockedCount}",
+                                                    fontSize = 9.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                ) {
                                     Icon(
-                                        if (isBookmarked) Icons.Default.Star else Icons.Default.StarBorder,
-                                        contentDescription = "Bookmark",
-                                        tint = if (isBookmarked) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                        imageVector = if (tab.isPrivate) Icons.Default.VisibilityOff else Icons.Default.Shield,
+                                        contentDescription = "Privacy X-Ray",
+                                        tint = if (tab.isPrivate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
-                                IconButton(onClick = { menuExpanded = false; onShare() }, enabled = tab.url.isNotBlank()) {
-                                    Icon(Icons.Default.Share, contentDescription = "Share")
+                            }
+
+                            // Site chip — tap to expand into the editor.
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .clickable {
+                                        inputText = tab.url
+                                        isEditing = true
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val display = when {
+                                    tab.url.isBlank() -> "Search or type URL"
+                                    else -> hostOf(tab.url).ifBlank { tab.url }
+                                }
+                                Icon(
+                                    imageVector = if (tab.isSecure()) Icons.Default.Lock else Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = display,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (tab.url.isBlank())
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    else
+                                        MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (tab.url.isBlank()) FontWeight.Normal else FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            if (tab.url.isNotBlank()) {
+                                IconButton(onClick = onReload, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = if (tab.isLoading) Icons.Default.Close else Icons.Default.Refresh,
+                                        contentDescription = if (tab.isLoading) "Stop" else "Reload",
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("New Tab") },
-                                leadingIcon = { Icon(Icons.Default.Add, null) },
-                                onClick = { menuExpanded = false; onNewTab(false) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("New Private Tab") },
-                                leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
-                                onClick = { menuExpanded = false; onNewTab(true) }
-                            )
-                            if (tab.url.isNotBlank()) {
-                                DropdownMenuItem(
-                                    text = { Text("Reader Studio") },
-                                    leadingIcon = { Icon(Icons.Default.MenuBook, null) },
-                                    onClick = { menuExpanded = false; onOpenReader() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Find in Page") },
-                                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                                    onClick = { menuExpanded = false; onOpenFindInPage() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (tab.desktopMode) "Mobile Site" else "Desktop Site") },
-                                    leadingIcon = { Icon(Icons.Default.DesktopWindows, null) },
-                                    onClick = { menuExpanded = false; onToggleDesktopMode() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Print / Save PDF") },
-                                    leadingIcon = { Icon(Icons.Default.Print, null) },
-                                    onClick = { menuExpanded = false; onPrint() }
+
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 4.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        width = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable { onOpenTabOverview() }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "$tabCount",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Bookmarks") },
-                                leadingIcon = { Icon(Icons.Default.Bookmarks, null) },
-                                onClick = { menuExpanded = false; onOpenBookmarks() }
+
+                            Box {
+                                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Menu", modifier = Modifier.size(20.dp))
+                                }
+                                AddressBarMenu(
+                                    expanded = menuExpanded,
+                                    tab = tab,
+                                    isBookmarked = isBookmarked,
+                                    onDismiss = { menuExpanded = false },
+                                    onBack = onBack,
+                                    onForward = onForward,
+                                    onToggleBookmark = onToggleBookmark,
+                                    onShare = onShare,
+                                    onNewTab = onNewTab,
+                                    onOpenReader = onOpenReader,
+                                    onOpenFindInPage = onOpenFindInPage,
+                                    onToggleDesktopMode = onToggleDesktopMode,
+                                    onPrint = onPrint,
+                                    onOpenBookmarks = onOpenBookmarks,
+                                    onOpenHistory = onOpenHistory,
+                                    onOpenDownloads = onOpenDownloads,
+                                    onOpenToppings = onOpenToppings,
+                                    onOpenProfiles = onOpenProfiles,
+                                    onOpenSettings = onOpenSettings,
+                                    onCheckForUpdates = onCheckForUpdates
+                                )
+                            }
+                        }
+                    }
+
+                    // ---------- Editor: search icon, text field, clear, cancel ----------
+                    if (isEditing) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(editorAlpha),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
                             )
-                            DropdownMenuItem(
-                                text = { Text("History") },
-                                leadingIcon = { Icon(Icons.Default.History, null) },
-                                onClick = { menuExpanded = false; onOpenHistory() }
+                            Spacer(Modifier.width(8.dp))
+                            BasicTextField(
+                                value = inputText,
+                                onValueChange = { inputText = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 15.sp
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                                keyboardActions = KeyboardActions(onGo = { submitInput() }),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester)
                             )
-                            DropdownMenuItem(
-                                text = { Text("Downloads") },
-                                leadingIcon = { Icon(Icons.Default.FileDownload, null) },
-                                onClick = { menuExpanded = false; onOpenDownloads() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Toppings") },
-                                leadingIcon = { Icon(Icons.Default.Extension, null) },
-                                onClick = { menuExpanded = false; onOpenToppings() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Profiles") },
-                                leadingIcon = { Icon(Icons.Default.Person, null) },
-                                onClick = { menuExpanded = false; onOpenProfiles() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Settings") },
-                                leadingIcon = { Icon(Icons.Default.Settings, null) },
-                                onClick = { menuExpanded = false; onOpenSettings() }
-                            )
+                            if (inputText.isNotEmpty()) {
+                                IconButton(onClick = { inputText = "" }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            TextButton(onClick = {
+                                isEditing = false
+                                inputText = tab.url
+                            }) {
+                                Text("Cancel")
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** True for https URLs, used for the lock / search glyph in the address pillar. */
+private fun BrowserTab.isSecure(): Boolean = url.startsWith("https://")
+
+@Composable
+private fun AddressBarMenu(
+    expanded: Boolean,
+    tab: BrowserTab,
+    isBookmarked: Boolean,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onShare: () -> Unit,
+    onNewTab: (Boolean) -> Unit,
+    onOpenReader: () -> Unit,
+    onOpenFindInPage: () -> Unit,
+    onToggleDesktopMode: () -> Unit,
+    onPrint: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenToppings: () -> Unit,
+    onOpenProfiles: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onCheckForUpdates: () -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(onClick = { onDismiss(); onBack() }, enabled = tab.canGoBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            IconButton(onClick = { onDismiss(); onForward() }, enabled = tab.canGoForward) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+            }
+            IconButton(onClick = { onDismiss(); onToggleBookmark() }, enabled = tab.url.isNotBlank()) {
+                Icon(
+                    if (isBookmarked) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Bookmark",
+                    tint = if (isBookmarked) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                )
+            }
+            IconButton(onClick = { onDismiss(); onShare() }, enabled = tab.url.isNotBlank()) {
+                Icon(Icons.Default.Share, contentDescription = "Share")
+            }
+        }
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("New Tab") },
+            leadingIcon = { Icon(Icons.Default.Add, null) },
+            onClick = { onDismiss(); onNewTab(false) }
+        )
+        DropdownMenuItem(
+            text = { Text("New Private Tab") },
+            leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
+            onClick = { onDismiss(); onNewTab(true) }
+        )
+        if (tab.url.isNotBlank()) {
+            DropdownMenuItem(
+                text = { Text("Reader Studio") },
+                leadingIcon = { Icon(Icons.Default.MenuBook, null) },
+                onClick = { onDismiss(); onOpenReader() }
+            )
+            DropdownMenuItem(
+                text = { Text("Find in Page") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                onClick = { onDismiss(); onOpenFindInPage() }
+            )
+            DropdownMenuItem(
+                text = { Text(if (tab.desktopMode) "Mobile Site" else "Desktop Site") },
+                leadingIcon = { Icon(Icons.Default.DesktopWindows, null) },
+                onClick = { onDismiss(); onToggleDesktopMode() }
+            )
+            DropdownMenuItem(
+                text = { Text("Print / Save PDF") },
+                leadingIcon = { Icon(Icons.Default.Print, null) },
+                onClick = { onDismiss(); onPrint() }
+            )
+        }
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Bookmarks") },
+            leadingIcon = { Icon(Icons.Default.Bookmarks, null) },
+            onClick = { onDismiss(); onOpenBookmarks() }
+        )
+        DropdownMenuItem(
+            text = { Text("History") },
+            leadingIcon = { Icon(Icons.Default.History, null) },
+            onClick = { onDismiss(); onOpenHistory() }
+        )
+        DropdownMenuItem(
+            text = { Text("Downloads") },
+            leadingIcon = { Icon(Icons.Default.FileDownload, null) },
+            onClick = { onDismiss(); onOpenDownloads() }
+        )
+        DropdownMenuItem(
+            text = { Text("Toppings") },
+            leadingIcon = { Icon(Icons.Default.Extension, null) },
+            onClick = { onDismiss(); onOpenToppings() }
+        )
+        DropdownMenuItem(
+            text = { Text("Profiles") },
+            leadingIcon = { Icon(Icons.Default.Person, null) },
+            onClick = { onDismiss(); onOpenProfiles() }
+        )
+        DropdownMenuItem(
+            text = { Text("Check for Updates") },
+            leadingIcon = { Icon(Icons.Default.SystemUpdate, null) },
+            onClick = { onDismiss(); onCheckForUpdates() }
+        )
+        DropdownMenuItem(
+            text = { Text("Settings") },
+            leadingIcon = { Icon(Icons.Default.Settings, null) },
+            onClick = { onDismiss(); onOpenSettings() }
+        )
     }
 }
 
@@ -537,10 +690,9 @@ fun TabOverviewSheet(
     onDismiss: () -> Unit
 ) {
     var showPrivateOnly by remember { mutableStateOf(false) }
-    val filteredTabs = remember(tabs, showPrivateOnly) {
-        val list = if (showPrivateOnly) tabs.filter { it.isPrivate } else tabs.filter { !it.isPrivate }
-        list.sortedByDescending { it.isPinned }
-    }
+    // Computed on every recomposition so closing / opening / pinning a tab updates the sheet.
+    val filteredTabs = (if (showPrivateOnly) tabs.filter { it.isPrivate } else tabs.filter { !it.isPrivate })
+        .sortedByDescending { it.isPinned }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1001,6 +1153,55 @@ fun FindInPageBar(
             }
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Close")
+            }
+        }
+    }
+}
+
+/** Overlay shown when the main frame fails to load, instead of a blank white page. */
+@Composable
+fun PageErrorCard(
+    message: String,
+    onRetry: () -> Unit,
+    onHome: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ElevatedCard(shape = RoundedCornerShape(24.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.WifiOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Can't reach this page",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onRetry, shape = RoundedCornerShape(20.dp)) { Text("Retry") }
+                    OutlinedButton(onClick = onHome, shape = RoundedCornerShape(20.dp)) { Text("Home") }
+                }
             }
         }
     }

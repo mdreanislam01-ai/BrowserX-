@@ -1,7 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Build number comes from CI (-PbrowserxBuild=<commit count>). Local builds default to 0.
+val buildNumber = (project.findProperty("browserxBuild") as String?)?.toIntOrNull() ?: 0
+
+// Optional private signing (keystore.properties is git-ignored). When it is missing we fall
+// back to the bundled BrowserX debug key so that every CI build has the SAME signature and
+// in-app updates can be installed over the previous build.
+val signingPropsFile = rootProject.file("keystore.properties")
+val signingProps = Properties().apply {
+    if (signingPropsFile.exists()) signingPropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -12,13 +25,29 @@ android {
         applicationId = "com.browserx.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 1000 + buildNumber
+        versionName = "1.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("browserx") {
+            val customStore = signingProps.getProperty("storeFile")
+            storeFile = if (customStore != null) rootProject.file(customStore) else file("browserx-signing.p12")
+            storePassword = signingProps.getProperty("storePassword") ?: "browserx"
+            keyAlias = signingProps.getProperty("keyAlias") ?: "browserx"
+            keyPassword = signingProps.getProperty("keyPassword") ?: "browserx"
+            storeType = "PKCS12"
+        }
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("browserx")
+        }
         getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("browserx")
         }
     }
 
@@ -46,4 +75,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.webkit:webkit:1.12.1")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
