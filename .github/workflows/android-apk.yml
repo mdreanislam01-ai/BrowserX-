@@ -4,12 +4,11 @@ on:
   push:
     paths:
       - 'android/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
+      - '*.gradle.kts'
       - 'gradle.properties'
       - '.github/workflows/android-apk.yml'
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -20,61 +19,86 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Configure Android SDK
-        run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools" >> "$GITHUB_PATH"
-      - name: Install Android SDK components
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Unit tests
+      - name: Test and assemble installable app
+        shell: bash
         run: |
-          gradle --no-daemon :app:testDebugUnitTest --console=plain 2>&1 | tee test.log
-          tail -n 15 test.log
-      - name: Build debug APK
-        run: |
-          set +e
-          gradle --no-daemon :app:assembleDebug --stacktrace --console=plain > build.log 2>&1
-          result=$?
-          if [ "$result" -ne 0 ]; then
-            tail -n 25 build.log
-            errors=$(grep -E -i 'e: file|e: [a-z]|error:|unresolved reference|type mismatch|cannot infer|overload resolution|not enough information' build.log | sed 's#https://[^ ]*##g' | cut -c1-220)
-            head_summary=$(printf '%s\n' "$errors" | head -n 10 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')
-            tail_summary=$(printf '%s\n' "$errors" | tail -n 10 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')
-            echo "::error::first errors: $head_summary"
-            echo "::error::last errors: $tail_summary"
-            exit "$result"
-          fi
-          tail -n 25 build.log
+          args=()
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then args+=(-PbrowserxPreview); fi
+          gradle "${args[@]}" :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+          mkdir -p artifacts
+          name="BrowserX-1.1.0-${GITHUB_SHA:0:7}"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "artifacts/$name.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: BrowserX-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: BrowserX-1.1.0-${{ github.sha }}
+          path: artifacts/*.apk
           if-no-files-found: error
-      - name: Publish installable APK download
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: browserx-v1.0.0
-          name: BrowserX³ Android APK v1.0.0
+          name: device-tests
+          path: android/app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
+
+  device-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: BrowserX-1.1.0-${{ github.sha }}
+          path: apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: device-tests
+          path: test
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify the actual APK on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          APP_ID: ${{ github.ref == 'refs/heads/main' && 'com.browserx.app' || 'com.browserx.app.preview' }}
+        with:
+          api-level: 30
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install apk/*.apk
+            adb install test/*.apk
+            adb shell am instrument -w "$APP_ID.test/androidx.test.runner.AndroidJUnitRunner" | tee device.log
+            adb pull "/sdcard/Android/data/$APP_ID/files/smoke" screenshots || true
+            grep -Eq '^OK \([1-9][0-9]* tests?\)' device.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BrowserX-device-check
+          path: |
+            screenshots/
+            device.log
+
+  publish:
+    needs: device-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: BrowserX-1.1.0-${{ github.sha }}
+      - run: mv BrowserX-*.apk BrowserX-1.1.0.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: browserx-v1.1.0
+          name: BrowserX³ Android v1.1.0
           target_commitish: ${{ github.sha }}
           body: |
-            Installable BrowserX³ Android debug APK.
-
-            v1.0.0 — first version (System WebView engine):
-            - Tabs: open, switch, close, tab overview
-            - Address bar with Google search (DuckDuckGo and Bing in Settings)
-            - Bookmarks and history (start empty)
-            - Downloads via Android DownloadManager, with a downloads list
-            - Simple ad-block (built-in ad/tracker host list)
-            - Private tabs (no history saved)
-            - Dark mode: system / light / dark
-            - Home page with search + quick links
-            - Back / forward / refresh / share
-            - Swipe left/right on the address bar to switch tabs
-          files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-          overwrite_files: true
+            System WebView edition, version 1.1.0 (build 2). Gesture toolbar, local commands, visual tab overview, per-profile sessions, favorites, Link Peek and page trails.
+            This is a debug-signed APK. Branch previews have a separate application ID and never overwrite this release.
+          files: BrowserX-1.1.0.apk

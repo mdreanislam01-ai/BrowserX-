@@ -9,13 +9,13 @@ enum class ThemeMode(val label: String) {
 }
 
 enum class TabViewMode(val label: String) {
-    COVER_FLOW("Cover-Flow"),
+    COVER_FLOW("Coverflow"),
     GRID("Grid"),
     LIST("List")
 }
 
 enum class AddressBarPosition(val label: String) {
-    BOTTOM("Bottom (Gesture-first)"),
+    BOTTOM("Bottom"),
     TOP("Top")
 }
 
@@ -37,7 +37,8 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val blockedCount: Int = 0,
-    val blockedDomains: List<String> = emptyList()
+    val blockedDomains: List<String> = emptyList(),
+    val trail: PageTrail = PageTrail()
 )
 
 data class BookmarkItem(
@@ -80,7 +81,11 @@ data class AppSettings(
     val searchEngine: SearchEngine = SearchEngine.GOOGLE,
     val adBlockEnabled: Boolean = true,
     val cookieBannerHiderEnabled: Boolean = true,
-    val httpsOnlyEnabled: Boolean = false,
+    val httpsOnlyEnabled: Boolean = true,
     val forceDarkWebEnabled: Boolean = false,
-    val hapticsEnabled: Boolean = true
+    val hapticsEnabled: Boolean = true,
+    val restoreTabs: Boolean = true,
+    val showFavorites: Boolean = true,
+    val localSuggestions: Boolean = true,
+    val floatingMenu: Boolean = false
 )

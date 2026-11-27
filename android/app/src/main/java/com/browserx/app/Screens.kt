@@ -1,5 +1,7 @@
 package com.browserx.app
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,12 +28,15 @@ fun BookmarksScreen(
     bookmarks: List<BookmarkItem>,
     onOpen: (String) -> Unit,
     onDelete: (BookmarkItem) -> Unit,
+    onAdd: () -> Unit,
     onBack: () -> Unit
 ) {
+    var query by remember { mutableStateOf("") }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Bookmarks") },
+                title = { Text("Favorites") },
+                actions = { IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Add favorite") } },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -42,15 +47,18 @@ fun BookmarksScreen(
     ) { padding ->
         if (bookmarks.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("No bookmarks yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No favorites yet · tap + to add a site", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                items(bookmarks, key = { it.url }) { item ->
+                item { LibrarySearch(query, "Search favorites") { query = it } }
+                val matches = bookmarks.filter { it.title.contains(query, true) || it.url.contains(query, true) }
+                if (matches.isEmpty()) item { Text("No matching favorites", Modifier.padding(16.dp)) }
+                items(matches, key = { it.url }) { item ->
                     ListItem(
                         headlineContent = { Text(item.title.ifBlank { item.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(item.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingContent = { Icon(Icons.Default.Star, null, tint = MaterialTheme.colorScheme.primary) },
+                        leadingContent = { Icon(Icons.Default.Favorite, null, tint = MaterialTheme.colorScheme.primary) },
                         trailingContent = {
                             IconButton(onClick = { onDelete(item) }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete")
@@ -72,6 +80,9 @@ fun HistoryScreen(
     onClearAll: () -> Unit,
     onBack: () -> Unit
 ) {
+    var query by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf(false) }
+    if (confirm) ConfirmClear("Clear this profile’s history and page trails?", { confirm = false }, { confirm = false; onClearAll() })
     Scaffold(
         topBar = {
             TopAppBar(
@@ -83,7 +94,7 @@ fun HistoryScreen(
                 },
                 actions = {
                     if (history.isNotEmpty()) {
-                        TextButton(onClick = onClearAll) { Text("Clear") }
+                        TextButton(onClick = { confirm = true }) { Text("Clear") }
                     }
                 }
             )
@@ -95,7 +106,10 @@ fun HistoryScreen(
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                items(history) { item ->
+                item { LibrarySearch(query, "Search history") { query = it } }
+                val matches = history.filter { it.title.contains(query, true) || it.url.contains(query, true) }
+                if (matches.isEmpty()) item { Text("No matching visits", Modifier.padding(16.dp)) }
+                items(matches) { item ->
                     ListItem(
                         headlineContent = { Text(item.title.ifBlank { item.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(item.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -112,9 +126,12 @@ fun HistoryScreen(
 @Composable
 fun DownloadsScreen(
     downloads: List<DownloadItem>,
+    onOpen: (DownloadItem) -> Unit,
     onClearAll: () -> Unit,
     onBack: () -> Unit
 ) {
+    var confirm by remember { mutableStateOf(false) }
+    if (confirm) ConfirmClear("Clear the download list? Files on your device are kept.", { confirm = false }, { confirm = false; onClearAll() })
     Scaffold(
         topBar = {
             TopAppBar(
@@ -126,7 +143,7 @@ fun DownloadsScreen(
                 },
                 actions = {
                     if (downloads.isNotEmpty()) {
-                        TextButton(onClick = onClearAll) { Text("Clear") }
+                        TextButton(onClick = { confirm = true }) { Text("Clear") }
                     }
                 }
             )
@@ -142,7 +159,8 @@ fun DownloadsScreen(
                     ListItem(
                         headlineContent = { Text(item.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(item.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingContent = { Icon(Icons.Default.FileDownload, null) }
+                        leadingContent = { Icon(Icons.Default.FileDownload, null) },
+                        modifier = Modifier.clickable { onOpen(item) }
                     )
                 }
             }
@@ -176,7 +194,7 @@ fun ToppingsScreen(
         ) {
             item {
                 Text(
-                    "Built-in page enhancements inspired by Candy Toppings.",
+                    "Local page tools for Android System WebView. Reload an open page after changing a tool.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -184,7 +202,7 @@ fun ToppingsScreen(
             item {
                 ElevatedCard(shape = RoundedCornerShape(20.dp)) {
                     ListItem(
-                        headlineContent = { Text("I Still Don't Care About Cookies") },
+                        headlineContent = { Text("Cookie banner hider") },
                         supportingContent = { Text("Automatically hide annoying cookie consent banners") },
                         trailingContent = {
                             Switch(
@@ -232,6 +250,7 @@ fun ToppingsScreen(
 fun ProfilesScreen(
     profiles: List<BrowserProfile>,
     activeProfileId: String,
+    isolated: Boolean,
     onSelectProfile: (String) -> Unit,
     onAddProfile: (String, String, Long) -> Unit,
     onBack: () -> Unit
@@ -240,6 +259,8 @@ fun ProfilesScreen(
     var newName by remember { mutableStateOf("") }
     val emojis = listOf("🍬", "🚀", "💼", "🎮", "📚", "🌙")
     var selectedEmoji by remember { mutableStateOf("🚀") }
+    val accents = listOf(0xFF4B609A, 0xFF865093, 0xFF006D3B, 0xFF98501C, 0xFF006A78)
+    var accent by remember { mutableLongStateOf(accents.first()) }
 
     Scaffold(
         topBar = {
@@ -263,6 +284,7 @@ fun ProfilesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item { Text(if (isolated) "Each profile has its own tabs, history and website logins." else "Tabs and history are separate. This WebView shares website logins between regular profiles.", style = MaterialTheme.typography.bodyMedium) }
             items(profiles, key = { it.id }) { profile ->
                 val isSelected = profile.id == activeProfileId
                 ElevatedCard(
@@ -306,7 +328,7 @@ fun ProfilesScreen(
                         label = { Text("Profile Name") },
                         singleLine = true
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         emojis.forEach { e ->
                             FilterChip(
                                 selected = selectedEmoji == e,
@@ -315,12 +337,18 @@ fun ProfilesScreen(
                             )
                         }
                     }
+                    Text("Profile color", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        accents.forEachIndexed { i, color -> IconButton(onClick = { accent = color }, modifier = Modifier.size(36.dp).background(Color(color), CircleShape)) {
+                            if (accent == color) Icon(Icons.Default.Check, "Selected color ${i + 1}", tint = Color.White) else Text("${i + 1}", color = Color.White)
+                        } }
+                    }
                 }
             },
             confirmButton = {
-                Button(onClick = {
+                Button(enabled = newName.isNotBlank(), onClick = {
                     if (newName.isNotBlank()) {
-                        onAddProfile(newName.trim(), selectedEmoji, 0xFF006D3B)
+                        onAddProfile(newName.trim().take(32), selectedEmoji, accent)
                         showAdd = false
                         newName = ""
                     }
@@ -330,120 +358,5 @@ fun ProfilesScreen(
                 TextButton(onClick = { showAdd = false }) { Text("Cancel") }
             }
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreen(
-    settings: AppSettings,
-    onUpdateSettings: (AppSettings) -> Unit,
-    onClearBrowsingData: () -> Unit,
-    onBack: () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                Text("Appearance", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Theme", style = MaterialTheme.typography.bodyLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = settings.themeMode == mode,
-                                onClick = { onUpdateSettings(settings.copy(themeMode = mode)) },
-                                label = { Text(mode.label) }
-                            )
-                        }
-                    }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Material You Dynamic Color")
-                    Switch(
-                        checked = settings.dynamicColor,
-                        onCheckedChange = { onUpdateSettings(settings.copy(dynamicColor = it)) }
-                    )
-                }
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Address Bar Position", style = MaterialTheme.typography.bodyLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AddressBarPosition.entries.forEach { pos ->
-                            FilterChip(
-                                selected = settings.addressBarPosition == pos,
-                                onClick = { onUpdateSettings(settings.copy(addressBarPosition = pos)) },
-                                label = { Text(pos.label) }
-                            )
-                        }
-                    }
-                }
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Default Search Engine", style = MaterialTheme.typography.bodyLarge)
-                    SearchEngine.entries.forEach { engine ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { onUpdateSettings(settings.copy(searchEngine = engine)) }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = settings.searchEngine == engine,
-                                onClick = { onUpdateSettings(settings.copy(searchEngine = engine)) }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(engine.label)
-                        }
-                    }
-                }
-            }
-            item {
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-                Text("Privacy & Gestures", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Haptic Feedback")
-                    Switch(
-                        checked = settings.hapticsEnabled,
-                        onCheckedChange = { onUpdateSettings(settings.copy(hapticsEnabled = it)) }
-                    )
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = onClearBrowsingData,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Icon(Icons.Default.DeleteSweep, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Clear Cookies, Cache & History")
-                }
-            }
-        }
     }
 }

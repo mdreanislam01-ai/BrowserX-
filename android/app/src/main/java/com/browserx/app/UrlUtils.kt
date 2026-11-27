@@ -7,7 +7,11 @@ import java.net.URLEncoder
 enum class SearchEngine(val id: String, val label: String, val searchUrl: String) {
     GOOGLE("google", "Google", "https://www.google.com/search?q="),
     DUCKDUCKGO("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q="),
-    BING("bing", "Bing", "https://www.bing.com/search?q=");
+    BING("bing", "Bing", "https://www.bing.com/search?q="),
+    BRAVE("brave", "Brave Search", "https://search.brave.com/search?q="),
+    ECOSIA("ecosia", "Ecosia", "https://www.ecosia.org/search?q="),
+    STARTPAGE("startpage", "Startpage", "https://www.startpage.com/sp/search?query="),
+    QWANT("qwant", "Qwant", "https://www.qwant.com/?q=");
 
     fun searchUrlFor(query: String): String =
         searchUrl + URLEncoder.encode(query, "UTF-8")
@@ -79,3 +83,13 @@ fun displayTitleFor(url: String): String {
     val host = hostOf(url)
     return if (host.isNotEmpty()) host else url
 }
+
+/** Only real network destinations may enter a tab, favorite, preview or external VIEW intent. */
+fun isWebUrl(value: String): Boolean = runCatching {
+    val uri = URI(value)
+    (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) &&
+        !uri.host.isNullOrBlank() && uri.rawUserInfo == null
+}.getOrDefault(false)
+
+fun secureUrl(url: String, httpsOnly: Boolean): String =
+    if (httpsOnly && url.startsWith("http://", ignoreCase = true)) "https://" + url.substring(7) else url

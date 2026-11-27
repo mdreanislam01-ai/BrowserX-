@@ -123,7 +123,7 @@ object AdBlockEngine {
             if (out.length === 0 && root.innerText) {
                 out.push(root.innerText.trim().slice(0, 12000));
             }
-            return JSON.stringify({ title: title, byline: byline, content: out.join('\n\n') });
+            return { title: title, byline: byline, content: out.join('\n\n').slice(0, 120000) };
         })();
     """
 }

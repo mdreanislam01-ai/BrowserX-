@@ -12,11 +12,20 @@ android {
         applicationId = "com.browserx.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        manifestPlaceholders["browserLabel"] = "@string/app_name"
+        versionCode = 2
+        versionName = "1.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
+        getByName("debug") {
+            // A branch APK can be tried alongside a previously installed build with a different signing key.
+            if (providers.gradleProperty("browserxPreview").isPresent) {
+                applicationIdSuffix = ".preview"
+                manifestPlaceholders["browserLabel"] = "BrowserX³ Preview"
+            }
+        }
         getByName("release") {
             isMinifyEnabled = false
         }
@@ -46,4 +55,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.webkit:webkit:1.12.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

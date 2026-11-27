@@ -4,3 +4,7 @@ keystore.properties
 *.jks
 *.keystore
 local.properties
+
+.gradle/
+**/build/
+*.apk

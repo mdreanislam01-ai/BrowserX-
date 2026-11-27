@@ -18,9 +18,13 @@ class PrefsStore(context: Context) {
             searchEngine = SearchEngine.entries.getOrElse(prefs.getInt("search_engine", 0)) { SearchEngine.GOOGLE },
             adBlockEnabled = prefs.getBoolean("ad_block", true),
             cookieBannerHiderEnabled = prefs.getBoolean("cookie_hider", true),
-            httpsOnlyEnabled = prefs.getBoolean("https_only", false),
+            httpsOnlyEnabled = prefs.getBoolean("https_only", true),
             forceDarkWebEnabled = prefs.getBoolean("force_dark_web", false),
-            hapticsEnabled = prefs.getBoolean("haptics", true)
+            hapticsEnabled = prefs.getBoolean("haptics", true),
+            restoreTabs = prefs.getBoolean("restore_tabs", true),
+            showFavorites = prefs.getBoolean("home_favorites", true),
+            localSuggestions = prefs.getBoolean("local_suggestions", true),
+            floatingMenu = prefs.getBoolean("floating_menu", false)
         )
     }
 
@@ -36,6 +40,10 @@ class PrefsStore(context: Context) {
             .putBoolean("https_only", s.httpsOnlyEnabled)
             .putBoolean("force_dark_web", s.forceDarkWebEnabled)
             .putBoolean("haptics", s.hapticsEnabled)
+            .putBoolean("restore_tabs", s.restoreTabs)
+            .putBoolean("home_favorites", s.showFavorites)
+            .putBoolean("local_suggestions", s.localSuggestions)
+            .putBoolean("floating_menu", s.floatingMenu)
             .apply()
     }
 
@@ -70,8 +78,11 @@ class PrefsStore(context: Context) {
         prefs.edit().putString("bookmarks_json", arr.toString()).apply()
     }
 
-    fun loadHistory(): List<HistoryItem> {
-        val raw = prefs.getString("history_json", "[]") ?: "[]"
+    // Keep the original library when upgrading: old unscoped history belongs to Personal.
+    private fun historyKey(profile: String) = if (profile == "default") "history_json" else "history_$profile"
+
+    fun loadHistory(profile: String): List<HistoryItem> {
+        val raw = prefs.getString(historyKey(profile), "[]") ?: "[]"
         val arr = JSONArray(raw)
         return List(arr.length()) { i ->
             val o = arr.getJSONObject(i)
@@ -83,7 +94,7 @@ class PrefsStore(context: Context) {
         }
     }
 
-    fun saveHistory(items: List<HistoryItem>) {
+    fun saveHistory(profile: String, items: List<HistoryItem>) {
         val arr = JSONArray()
         items.take(500).forEach { h ->
             arr.put(JSONObject().apply {
@@ -92,7 +103,7 @@ class PrefsStore(context: Context) {
                 put("ts", h.timestamp)
             })
         }
-        prefs.edit().putString("history_json", arr.toString()).apply()
+        prefs.edit().putString(historyKey(profile), arr.toString()).apply()
     }
 
     fun loadDownloads(): List<DownloadItem> {
@@ -153,6 +164,16 @@ class PrefsStore(context: Context) {
             })
         }
         prefs.edit().putString("profiles_json", arr.toString()).apply()
+    }
+
+    fun loadSession(profile: String) = SessionCodec.decode(prefs.getString("session_$profile", null))
+
+    fun saveSession(profile: String, tabs: List<BrowserTab>, activeId: String) {
+        prefs.edit().putString("session_$profile", SessionCodec.encode(tabs, activeId)).apply()
+    }
+
+    fun forgetSessions() {
+        prefs.edit().apply { prefs.all.keys.filter { it.startsWith("session_") }.forEach { remove(it) } }.apply()
     }
 
     fun getActiveProfileId(): String = prefs.getString("active_profile_id", "default") ?: "default"
