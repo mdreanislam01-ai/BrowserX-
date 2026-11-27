@@ -88,3 +88,31 @@ jobs:
           files: |
             android/app/build/outputs/apk/debug/app-debug.apk
           overwrite_files: true
+
+  device-test:
+    needs: build
+    runs-on: ubuntu-latest
+    # Extra safety net: a red emulator job should not block the APK release above.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Smoke test the real APK on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: default
+          arch: x86_64
+          disable-animations: true
+          script: gradle --no-daemon :app:connectedDebugAndroidTest --console=plain
