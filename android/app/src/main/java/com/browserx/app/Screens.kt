@@ -50,7 +50,7 @@ fun BookmarksScreen(
                     ListItem(
                         headlineContent = { Text(item.title.ifBlank { item.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(item.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingIcon = { Icon(Icons.Default.Star, null, tint = MaterialTheme.colorScheme.primary) },
+                        leadingContent = { Icon(Icons.Default.Star, null, tint = MaterialTheme.colorScheme.primary) },
                         trailingContent = {
                             IconButton(onClick = { onDelete(item) }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete")
@@ -99,7 +99,7 @@ fun HistoryScreen(
                     ListItem(
                         headlineContent = { Text(item.title.ifBlank { item.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(item.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingIcon = { Icon(Icons.Default.History, null) },
+                        leadingContent = { Icon(Icons.Default.History, null) },
                         modifier = Modifier.clickable { onOpen(item.url) }
                     )
                 }
@@ -142,7 +142,7 @@ fun DownloadsScreen(
                     ListItem(
                         headlineContent = { Text(item.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(item.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingIcon = { Icon(Icons.Default.FileDownload, null) }
+                        leadingContent = { Icon(Icons.Default.FileDownload, null) }
                     )
                 }
             }
