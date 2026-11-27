@@ -388,7 +388,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Address Bar Position", style = MaterialTheme.typography.bodyLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AddressBarPosition.entries.forEach { pos ->
+                        AddressBarPosition.displayOrder.forEach { pos ->
                             FilterChip(
                                 selected = settings.addressBarPosition == pos,
                                 onClick = { onUpdateSettings(settings.copy(addressBarPosition = pos)) },

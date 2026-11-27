@@ -15,8 +15,16 @@ enum class TabViewMode(val label: String) {
 }
 
 enum class AddressBarPosition(val label: String) {
-    BOTTOM("Bottom (Gesture-first)"),
-    TOP("Top")
+    // Top is the default layout: search pill, tab counter and overflow (3-dot) menu sit up top.
+    TOP("Top"),
+    BOTTOM("Bottom");
+
+    companion object {
+        /** The layout the app ships with: toolbar on top. */
+        val DEFAULT: AddressBarPosition get() = AddressBarPosition.TOP
+        val displayOrder: List<AddressBarPosition>
+            get() = listOf(AddressBarPosition.TOP, AddressBarPosition.BOTTOM)
+    }
 }
 
 enum class ReaderTheme(val label: String, val bgColor: Color, val textColor: Color) {
@@ -75,7 +83,7 @@ data class ReaderArticle(
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
-    val addressBarPosition: AddressBarPosition = AddressBarPosition.BOTTOM,
+    val addressBarPosition: AddressBarPosition = AddressBarPosition.DEFAULT,
     val tabViewMode: TabViewMode = TabViewMode.COVER_FLOW,
     val searchEngine: SearchEngine = SearchEngine.GOOGLE,
     val adBlockEnabled: Boolean = true,
