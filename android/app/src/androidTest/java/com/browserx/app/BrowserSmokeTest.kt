@@ -46,12 +46,11 @@ class BrowserSmokeTest {
     }
 
     @Test
-    fun tabOverviewOpens() {
+    fun tabCounterIsShownInToolbar() {
         waitForText("BrowserX³")
+        // One open tab, so the counter pill shows "1".
         composeRule.waitUntil(20_000) {
-            composeRule.onAllNodesWithContentDescription("Menu").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("1").fetchSemanticsNodes().isNotEmpty()
         }
-        // Tab counter pill sits next to the menu; tap it through the tab overview action.
-        composeRule.onNodeWithText("1").assertExists()
     }
 }

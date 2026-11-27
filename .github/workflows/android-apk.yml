@@ -115,4 +115,15 @@ jobs:
           target: default
           arch: x86_64
           disable-animations: true
-          script: gradle --no-daemon :app:connectedDebugAndroidTest --console=plain
+          script: |
+            gradle --no-daemon :app:connectedDebugAndroidTest --console=plain
+            status=$?
+            adb logcat -d -s AndroidRuntime:E | tail -n 40 | sed 's/%/%25/g' | cut -c1-500 | sed 's/^/::error::logcat /' || true
+            exit $status
+      - name: Surface test failures
+        if: always()
+        run: |
+          for f in $(find android/app/build -path '*androidTest-results*' -name '*.xml' | head -n 6); do
+            echo "--- $f"
+            grep -E '<testcase|<failure|<error' "$f" | cut -c1-700 | sed 's/%/%25/g' | sed 's/^/::error::/'
+          done
