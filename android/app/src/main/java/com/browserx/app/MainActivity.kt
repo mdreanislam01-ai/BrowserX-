@@ -421,14 +421,14 @@ fun BrowserXApp(
                                     factory = { ctx ->
                                         webViews.getOrPut(activeTab.id) {
                                             WebView(ctx).apply {
-                                                settings.javaScriptEnabled = true
-                                                settings.domStorageEnabled = true
-                                                settings.databaseEnabled = !activeTab.isPrivate
-                                                settings.builtInZoomControls = true
-                                                settings.displayZoomControls = false
-                                                settings.loadWithOverviewMode = true
-                                                settings.useWideViewPort = activeTab.desktopMode
-                                                settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                                                this.settings.javaScriptEnabled = true
+                                                this.settings.domStorageEnabled = true
+                                                this.settings.databaseEnabled = !activeTab.isPrivate
+                                                this.settings.builtInZoomControls = true
+                                                this.settings.displayZoomControls = false
+                                                this.settings.loadWithOverviewMode = true
+                                                this.settings.useWideViewPort = activeTab.desktopMode
+                                                this.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
 
                                                 if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
                                                     WebSettingsCompat.setAlgorithmicDarkeningAllowed(

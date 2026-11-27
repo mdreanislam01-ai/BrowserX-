@@ -653,7 +653,7 @@ fun TabOverviewSheet(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         },
-                                        leadingIcon = {
+                                        leadingContent = {
                                             Icon(
                                                 if (item.isPinned) Icons.Default.PushPin else Icons.Default.Public,
                                                 contentDescription = null,
