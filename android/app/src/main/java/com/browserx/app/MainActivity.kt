@@ -18,6 +18,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -34,7 +35,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.key
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.lazy.LazyColumn
@@ -90,6 +93,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -853,6 +857,14 @@ fun HomeContent(state: BrowserState) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        Image(
+            painter = painterResource(id = R.drawable.app_icon),
+            contentDescription = "BrowserX³ logo",
+            modifier = Modifier
+                .size(96.dp)
+                .clip(RoundedCornerShape(24.dp))
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Text(text = "BrowserX³", fontSize = 34.sp, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(4.dp))
         Text(text = "Search the web", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
