@@ -52,8 +52,10 @@ class BrowserSmokeTest {
         capture("03-menu")
         ui.onNodeWithContentDescription("Settings").performClick()
         capture("04-settings")
-        ui.onNodeWithText("About BrowserX³").performClick()
-        ui.onNodeWithText("Version 1.1.0 · Build 2").assertIsDisplayed()
+        ui.onNodeWithText("About BrowserX³").performScrollTo().performClick()
+        ui.onNodeWithText("Version ${BuildConfig.VERSION_NAME} · Build ${BuildConfig.VERSION_CODE}")
+            .performScrollTo()
+            .assertIsDisplayed()
         ui.onNodeWithContentDescription("Back").performClick()
         ui.onNodeWithContentDescription("Back").performClick()
         // Navigate through the real address field. Then supply a local page to avoid depending on a live
@@ -67,9 +69,10 @@ class BrowserSmokeTest {
                 }
             return null
         }
+        val browserActivity = ui.activity
         val url = "https://example.test/article"
         ui.runOnIdle {
-            checkNotNull(findWeb(ui.activity.window.decorView))
+            checkNotNull(findWeb(browserActivity.window.decorView))
                 .loadDataWithBaseURL(
                     url,
                     "<title>Local article</title><article><h1>Offline fixture</h1><p>A paragraph long enough to verify the real Reader Studio extraction.</p></article>",
@@ -79,7 +82,7 @@ class BrowserSmokeTest {
                 )
         }
         ui.waitUntil(15000) {
-            ui.runOnUiThread { findWeb(ui.activity.window.decorView)?.title == "Local article" }
+            ui.runOnUiThread { findWeb(browserActivity.window.decorView)?.title == "Local article" }
         }
         ui.onNodeWithText("example.test").performClick()
         ui.onNodeWithContentDescription("Address input").performTextReplacement(">reader")
@@ -87,5 +90,15 @@ class BrowserSmokeTest {
         ui.waitUntil(10000) { ui.onAllNodesWithText("Offline fixture").fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithText("A paragraph long enough to verify the real Reader Studio extraction.")
             .assertIsDisplayed()
+        ui.onNodeWithText("Save offline").performClick()
+        ui.onNodeWithContentDescription("Close reader").performClick()
+        ui.onNodeWithText("example.test").performClick()
+        ui.onNodeWithContentDescription("Address input").performTextReplacement(">reading")
+        ui.onNodeWithContentDescription("Address input").performImeAction()
+        ui.waitUntil(10000) { ui.onAllNodesWithText("Offline fixture").fetchSemanticsNodes().isNotEmpty() }
+        ui.onNodeWithText("Offline fixture").performClick()
+        ui.onNodeWithText("A paragraph long enough to verify the real Reader Studio extraction.")
+            .assertIsDisplayed()
+        ui.onNodeWithText("Save offline").assertDoesNotExist()
     }
 }
