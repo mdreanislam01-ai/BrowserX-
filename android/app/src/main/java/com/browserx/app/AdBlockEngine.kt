@@ -176,4 +176,48 @@ object AdBlockEngine {
             setTimeout(sweep, 3500);
         })();
     """
+
+    // ---------------------------------------------------------------------------------------
+    // Page scripts
+    // ---------------------------------------------------------------------------------------
+    const val COOKIE_BANNER_HIDER_JS = """
+        (function() {
+            if (window.__browserxCookieHider) return;
+            window.__browserxCookieHider = true;
+            var style = document.createElement('style');
+            style.textContent = [
+                '#onetrust-banner-sdk', '#onetrust-consent-sdk',
+                '.qc-cmp2-container', '#CybotCookiebotDialog',
+                '.cc-window', '.cc-banner', '#cookie-law-info-bar',
+                '[id*="cookie-banner"]', '[class*="cookie-banner"]',
+                '[id*="cookie-consent"]', '[class*="cookie-consent"]',
+                '[aria-label*="cookie" i][role="dialog"]',
+                '.fc-consent-root'
+            ].join(', ') + ' { display: none !important; visibility: hidden !important; pointer-events: none !important; }';
+            (document.head || document.documentElement).appendChild(style);
+        })();
+    """
+
+    const val READER_EXTRACTOR_JS = """
+        (function() {
+            var title = document.title || '';
+            var h1 = document.querySelector('h1');
+            if (h1 && h1.innerText.trim().length > 5) title = h1.innerText.trim();
+            var bylineEl = document.querySelector('[rel="author"], .author, .byline, [itemprop="author"]');
+            var byline = bylineEl ? bylineEl.innerText.trim() : '';
+            var root = document.querySelector('article, main, [role="main"], .post-content, .article-content, .entry-content') || document.body;
+            var blocks = root.querySelectorAll('p, h2, h3, blockquote, li');
+            var out = [];
+            for (var i = 0; i < blocks.length; i++) {
+                var txt = (blocks[i].innerText || '').trim();
+                if (txt.length > 25) {
+                    out.push(txt);
+                }
+            }
+            if (out.length === 0 && root.innerText) {
+                out.push(root.innerText.trim().slice(0, 12000));
+            }
+            return JSON.stringify({ title: title, byline: byline, content: out.join('\n\n') });
+        })();
+    """
 }
