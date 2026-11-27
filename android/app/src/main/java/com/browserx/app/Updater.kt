@@ -212,4 +212,23 @@ object Updater {
     fun installPermissionIntent(context: Context): Intent =
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Opens the permission screen, falling back to app details on OEMs without it. */
+    fun openInstallPermissionSettings(context: Context) {
+        val candidates = listOf(
+            installPermissionIntent(context),
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}")
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        for (intent in candidates) {
+            try {
+                context.startActivity(intent)
+                return
+            } catch (_: Exception) {
+                // try the next candidate
+            }
+        }
+    }
 }

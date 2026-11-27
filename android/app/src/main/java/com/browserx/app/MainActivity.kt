@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.speech.tts.TextToSpeech
@@ -153,6 +154,8 @@ fun BrowserXApp(
 
     // Toolbar that slides away while the page is scrolled down (Candy-style).
     val chromeHidden = remember { mutableStateOf(false) }
+    // Cooldown so resizing the WebView (which happens when the bar hides) cannot make it flap.
+    val chromeToggleAt = remember { mutableStateOf(0L) }
 
     // In-app update state.
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -248,7 +251,7 @@ fun BrowserXApp(
             }
         } else {
             Toast.makeText(context, "Allow BrowserX to install apps, then tap Install again", Toast.LENGTH_LONG).show()
-            context.startActivity(Updater.installPermissionIntent(context))
+            Updater.openInstallPermissionSettings(context)
         }
     }
 
@@ -362,6 +365,11 @@ fun BrowserXApp(
             activeTab.canGoBack -> webViews[activeTab.id]?.goBack()
             else -> goHome(activeTab.id)
         }
+    }
+
+    // Switching tabs should always show the toolbar again.
+    LaunchedEffect(activeTabId) {
+        chromeHidden.value = false
     }
 
     // Silent update check once per launch; the dialog only appears when something is newer.
@@ -601,16 +609,6 @@ fun BrowserXApp(
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        // While the toolbar is scrolled away, tapping the top edge brings it back.
-                        if (chromeHidden.value && activeTab.url.isNotBlank()) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .fillMaxWidth()
-                                    .height(20.dp)
-                                    .clickable { chromeHidden.value = false }
-                            )
-                        }
                         if (activeTab.url.isBlank()) {
                             CandyStartPage(
                                 profile = activeProfile,
@@ -662,13 +660,18 @@ fun BrowserXApp(
                                                     }
                                                 }
 
-                                                // Candy-style chrome: slide the toolbar away while scrolling down.
+                                                // Candy-style chrome: slide the toolbar away while scrolling
+                                                // down and bring it back when scrolling up.
                                                 setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                                                    val now = SystemClock.uptimeMillis()
+                                                    if (now - chromeToggleAt.value < 400L) return@setOnScrollChangeListener
                                                     val delta = scrollY - oldScrollY
-                                                    if (delta > 10 && scrollY > 150) {
-                                                        if (!chromeHidden.value) chromeHidden.value = true
-                                                    } else if (delta < -10) {
-                                                        if (chromeHidden.value) chromeHidden.value = false
+                                                    if (delta > 12 && scrollY > 200 && !chromeHidden.value) {
+                                                        chromeHidden.value = true
+                                                        chromeToggleAt.value = now
+                                                    } else if (delta < -12 && chromeHidden.value) {
+                                                        chromeHidden.value = false
+                                                        chromeToggleAt.value = now
                                                     }
                                                 }
 
@@ -783,6 +786,27 @@ fun BrowserXApp(
                                     onHome = { goHome(activeTab.id) }
                                 )
                             }
+                        }
+
+                        // Drawn last so it sits above the WebView: tapping the top edge brings
+                        // the hidden toolbar back.
+                        if (chromeHidden.value && activeTab.url.isNotBlank() && activeTab.errorText == null) {
+                            Box(
+                                modifier = Modifier
+                                    .align(
+                                        if (settings.addressBarPosition == AddressBarPosition.TOP) {
+                                            Alignment.TopCenter
+                                        } else {
+                                            Alignment.BottomCenter
+                                        }
+                                    )
+                                    .fillMaxWidth()
+                                    .height(22.dp)
+                                    .clickable {
+                                        chromeHidden.value = false
+                                        chromeToggleAt.value = SystemClock.uptimeMillis()
+                                    }
+                            )
                         }
                     }
                 }
