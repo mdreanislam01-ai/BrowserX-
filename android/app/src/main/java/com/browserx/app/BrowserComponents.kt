@@ -157,7 +157,7 @@ fun CandyAddressBar(
     val baseGlow = when {
         isEditing -> 1f
         tab.isLoading -> 0.95f
-        else -> 0.30f
+        else -> 0f
     }
     val glowStrength = maxOf(baseGlow, scrollGlow)
     val glowBrush: Brush? = if (glowStrength > 0.04f) {
@@ -219,6 +219,17 @@ fun CandyAddressBar(
                 .padding(horizontal = outerPadding, vertical = 8.dp)
                 .drawWithContent {
                     drawContent()
+                    if (glowBrush == null) {
+                        val hairline = 1.dp.toPx()
+                        val radius = glowCorner.toPx()
+                        drawRoundRect(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                            topLeft = Offset(hairline / 2f, hairline / 2f),
+                            size = Size(size.width - hairline, size.height - hairline),
+                            cornerRadius = CornerRadius(radius, radius),
+                            style = Stroke(width = hairline)
+                        )
+                    }
                     if (glowBrush != null) {
                         val ring = (1.4f + 1.1f * glowStrength).dp.toPx()
                         val radius = glowCorner.toPx()

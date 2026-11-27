@@ -115,6 +115,12 @@ object AdBlockEngine {
         } catch (_: Exception) {
             return null
         }
+        return matchHost(host, includeDownloaded)
+    }
+
+    /** Same matching as [matchedBlockedDomain] but for a bare host name (used by the DNS shield). */
+    fun matchHost(host: String, includeDownloaded: Boolean = true): String? {
+        val host = host.toLowerCase()
         if (host.isEmpty()) return null
         val downloaded = if (includeDownloaded) downloadedHosts else emptySet()
         var current = host

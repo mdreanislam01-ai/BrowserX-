@@ -2,12 +2,14 @@ package com.browserx.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -163,6 +165,39 @@ fun BrowserXApp(
     // Downloadable ad filter list (EasyList / EasyPrivacy hosts).
     var filterHostCount by remember { mutableStateOf(AdBlockEngine.downloadedHostCount) }
     var filterUpdating by remember { mutableStateOf(false) }
+
+    // BrowserX Shield: app-only DNS filtering VPN.
+    var shieldRunning by remember { mutableStateOf(ShieldVpnService.isRunning) }
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            ShieldVpnService.start(context)
+            shieldRunning = true
+        } else {
+            shieldRunning = false
+            Toast.makeText(context, "VPN permission was not granted", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun enableShield() {
+        val prepare = try {
+            VpnService.prepare(context)
+        } catch (_: Exception) {
+            null
+        }
+        if (prepare != null) {
+            vpnPermissionLauncher.launch(prepare)
+        } else {
+            ShieldVpnService.start(context)
+            shieldRunning = true
+        }
+    }
+
+    fun disableShield() {
+        ShieldVpnService.stop(context)
+        shieldRunning = false
+    }
 
     // In-app update state.
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -389,6 +424,16 @@ fun BrowserXApp(
         }
     }
 
+    // Reflect the real service state in Settings (it starts asynchronously).
+    LaunchedEffect(activeScreen) {
+        if (activeScreen == ActiveScreen.SETTINGS) {
+            while (true) {
+                shieldRunning = ShieldVpnService.isRunning
+                delay(800)
+            }
+        }
+    }
+
     // Switching tabs should always show the toolbar again.
     LaunchedEffect(activeTabId) {
         chromeHidden.value = false
@@ -490,6 +535,10 @@ fun BrowserXApp(
                 onClearFilters = {
                     AdBlockEngine.clearDownloadedHosts(context)
                     filterHostCount = 0
+                },
+                shieldRunning = shieldRunning,
+                onToggleShield = { wantsOn ->
+                    if (wantsOn) enableShield() else disableShield()
                 },
                 updateState = updateState,
                 onCheckForUpdates = { checkForUpdates(manual = true) },
