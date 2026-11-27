@@ -115,10 +115,14 @@ jobs:
           target: default
           arch: x86_64
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            gradle --no-daemon :app:connectedDebugAndroidTest --console=plain
+            set +e
+            gradle --no-daemon :app:connectedDebugAndroidTest --console=plain > test.log 2>&1
             status=$?
-            adb logcat -d -s AndroidRuntime:E | tail -n 40 | sed 's/%/%25/g' | cut -c1-500 | sed 's/^/::error::logcat /' || true
+            echo "::error::connectedAndroidTest exit=$status"
+            tail -n 50 test.log | cut -c1-600 | sed 's/%/%25/g' | sed 's/^/::error::gradle /'
+            adb logcat -d -s AndroidRuntime:E | tail -n 30 | cut -c1-500 | sed 's/%/%25/g' | sed 's/^/::error::logcat /'
             exit $status
       - name: Surface test failures
         if: always()
