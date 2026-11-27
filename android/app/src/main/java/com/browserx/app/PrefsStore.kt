@@ -13,9 +13,14 @@ class PrefsStore(context: Context) {
         return AppSettings(
             themeMode = ThemeMode.entries.getOrElse(prefs.getInt("theme_mode", 0)) { ThemeMode.SYSTEM },
             dynamicColor = prefs.getBoolean("dynamic_color", true),
-            addressBarPosition = AddressBarPosition.entries.getOrElse(prefs.getInt("address_bar_pos", 0)) { AddressBarPosition.BOTTOM },
-            tabViewMode = TabViewMode.entries.getOrElse(prefs.getInt("tab_view_mode", 0)) { TabViewMode.COVER_FLOW },
-            searchEngine = SearchEngine.entries.getOrElse(prefs.getInt("search_engine", 0)) { SearchEngine.GOOGLE },
+            addressBarPosition =
+                AddressBarPosition.entries.getOrElse(prefs.getInt("address_bar_pos", 0)) {
+                    AddressBarPosition.BOTTOM
+                },
+            tabViewMode =
+                TabViewMode.entries.getOrElse(prefs.getInt("tab_view_mode", 0)) { TabViewMode.COVER_FLOW },
+            searchEngine =
+                SearchEngine.entries.getOrElse(prefs.getInt("search_engine", 0)) { SearchEngine.GOOGLE },
             adBlockEnabled = prefs.getBoolean("ad_block", true),
             cookieBannerHiderEnabled = prefs.getBoolean("cookie_hider", true),
             httpsOnlyEnabled = prefs.getBoolean("https_only", true),
@@ -24,12 +29,21 @@ class PrefsStore(context: Context) {
             restoreTabs = prefs.getBoolean("restore_tabs", true),
             showFavorites = prefs.getBoolean("home_favorites", true),
             localSuggestions = prefs.getBoolean("local_suggestions", true),
-            floatingMenu = prefs.getBoolean("floating_menu", false)
+            floatingMenu = prefs.getBoolean("floating_menu", false),
+            leadingButton =
+                BarButton.entries.find { it.name == prefs.getString("bar_leading", null) } ?: BarButton.TABS,
+            trailingButton =
+                BarButton.entries.find { it.name == prefs.getString("bar_trailing", null) } ?: BarButton.NEW,
+            readerTheme =
+                ReaderTheme.entries.find { it.name == prefs.getString("reader_theme", null) }
+                    ?: ReaderTheme.LIGHT,
+            readerSize = prefs.getInt("reader_size", 17).coerceIn(13, 27),
         )
     }
 
     fun saveSettings(s: AppSettings) {
-        prefs.edit()
+        prefs
+            .edit()
             .putInt("theme_mode", s.themeMode.ordinal)
             .putBoolean("dynamic_color", s.dynamicColor)
             .putInt("address_bar_pos", s.addressBarPosition.ordinal)
@@ -44,6 +58,10 @@ class PrefsStore(context: Context) {
             .putBoolean("home_favorites", s.showFavorites)
             .putBoolean("local_suggestions", s.localSuggestions)
             .putBoolean("floating_menu", s.floatingMenu)
+            .putString("bar_leading", s.leadingButton.name)
+            .putString("bar_trailing", s.trailingButton.name)
+            .putString("reader_theme", s.readerTheme.name)
+            .putInt("reader_size", s.readerSize)
             .apply()
     }
 
@@ -61,7 +79,7 @@ class PrefsStore(context: Context) {
             BookmarkItem(
                 url = o.optString("url"),
                 title = o.optString("title"),
-                timestamp = o.optLong("ts", System.currentTimeMillis())
+                timestamp = o.optLong("ts", System.currentTimeMillis()),
             )
         }
     }
@@ -69,11 +87,13 @@ class PrefsStore(context: Context) {
     fun saveBookmarks(items: List<BookmarkItem>) {
         val arr = JSONArray()
         items.forEach { b ->
-            arr.put(JSONObject().apply {
-                put("url", b.url)
-                put("title", b.title)
-                put("ts", b.timestamp)
-            })
+            arr.put(
+                JSONObject().apply {
+                    put("url", b.url)
+                    put("title", b.title)
+                    put("ts", b.timestamp)
+                },
+            )
         }
         prefs.edit().putString("bookmarks_json", arr.toString()).apply()
     }
@@ -89,7 +109,7 @@ class PrefsStore(context: Context) {
             HistoryItem(
                 url = o.optString("url"),
                 title = o.optString("title"),
-                timestamp = o.optLong("ts", System.currentTimeMillis())
+                timestamp = o.optLong("ts", System.currentTimeMillis()),
             )
         }
     }
@@ -97,11 +117,13 @@ class PrefsStore(context: Context) {
     fun saveHistory(profile: String, items: List<HistoryItem>) {
         val arr = JSONArray()
         items.take(500).forEach { h ->
-            arr.put(JSONObject().apply {
-                put("url", h.url)
-                put("title", h.title)
-                put("ts", h.timestamp)
-            })
+            arr.put(
+                JSONObject().apply {
+                    put("url", h.url)
+                    put("title", h.title)
+                    put("ts", h.timestamp)
+                },
+            )
         }
         prefs.edit().putString(historyKey(profile), arr.toString()).apply()
     }
@@ -115,7 +137,7 @@ class PrefsStore(context: Context) {
                 id = o.optLong("id"),
                 fileName = o.optString("fileName"),
                 url = o.optString("url"),
-                timestamp = o.optLong("ts", System.currentTimeMillis())
+                timestamp = o.optLong("ts", System.currentTimeMillis()),
             )
         }
     }
@@ -123,12 +145,14 @@ class PrefsStore(context: Context) {
     fun saveDownloads(items: List<DownloadItem>) {
         val arr = JSONArray()
         items.take(200).forEach { d ->
-            arr.put(JSONObject().apply {
-                put("id", d.id)
-                put("fileName", d.fileName)
-                put("url", d.url)
-                put("ts", d.timestamp)
-            })
+            arr.put(
+                JSONObject().apply {
+                    put("id", d.id)
+                    put("fileName", d.fileName)
+                    put("url", d.url)
+                    put("ts", d.timestamp)
+                },
+            )
         }
         prefs.edit().putString("downloads_json", arr.toString()).apply()
     }
@@ -138,7 +162,7 @@ class PrefsStore(context: Context) {
         if (raw == null) {
             return listOf(
                 BrowserProfile("default", "Personal", "🍬", 0xFF6750A4),
-                BrowserProfile("work", "Work", "💼", 0xFF0061A4)
+                BrowserProfile("work", "Work", "💼", 0xFF0061A4),
             )
         }
         val arr = JSONArray(raw)
@@ -148,7 +172,7 @@ class PrefsStore(context: Context) {
                 id = o.optString("id"),
                 name = o.optString("name"),
                 emoji = o.optString("emoji", "🍬"),
-                accentHex = o.optLong("accentHex", 0xFF6750A4)
+                accentHex = o.optLong("accentHex", 0xFF6750A4),
             )
         }
     }
@@ -156,12 +180,14 @@ class PrefsStore(context: Context) {
     fun saveProfiles(profiles: List<BrowserProfile>) {
         val arr = JSONArray()
         profiles.forEach { p ->
-            arr.put(JSONObject().apply {
-                put("id", p.id)
-                put("name", p.name)
-                put("emoji", p.emoji)
-                put("accentHex", p.accentHex)
-            })
+            arr.put(
+                JSONObject().apply {
+                    put("id", p.id)
+                    put("name", p.name)
+                    put("emoji", p.emoji)
+                    put("accentHex", p.accentHex)
+                },
+            )
         }
         prefs.edit().putString("profiles_json", arr.toString()).apply()
     }
@@ -173,7 +199,10 @@ class PrefsStore(context: Context) {
     }
 
     fun forgetSessions() {
-        prefs.edit().apply { prefs.all.keys.filter { it.startsWith("session_") }.forEach { remove(it) } }.apply()
+        prefs
+            .edit()
+            .apply { prefs.all.keys.filter { it.startsWith("session_") }.forEach { remove(it) } }
+            .apply()
     }
 
     fun getActiveProfileId(): String = prefs.getString("active_profile_id", "default") ?: "default"

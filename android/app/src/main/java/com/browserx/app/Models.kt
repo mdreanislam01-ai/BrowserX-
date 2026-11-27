@@ -5,24 +5,24 @@ import androidx.compose.ui.graphics.Color
 enum class ThemeMode(val label: String) {
     SYSTEM("System"),
     LIGHT("Light"),
-    DARK("Dark")
+    DARK("Dark"),
 }
 
 enum class TabViewMode(val label: String) {
     COVER_FLOW("Coverflow"),
     GRID("Grid"),
-    LIST("List")
+    LIST("List"),
 }
 
 enum class AddressBarPosition(val label: String) {
     BOTTOM("Bottom"),
-    TOP("Top")
+    TOP("Top"),
 }
 
 enum class ReaderTheme(val label: String, val bgColor: Color, val textColor: Color) {
     LIGHT("Light", Color(0xFFFAFAFA), Color(0xFF1C1B1F)),
     SEPIA("Sepia", Color(0xFFF4ECD8), Color(0xFF3E2F1C)),
-    DARK("Dark", Color(0xFF141416), Color(0xFFE6E1E5))
+    DARK("Dark", Color(0xFF141416), Color(0xFFE6E1E5)),
 }
 
 data class BrowserTab(
@@ -38,39 +38,39 @@ data class BrowserTab(
     val canGoForward: Boolean = false,
     val blockedCount: Int = 0,
     val blockedDomains: List<String> = emptyList(),
-    val trail: PageTrail = PageTrail()
+    val trail: PageTrail = PageTrail(),
 )
 
 data class BookmarkItem(
     val url: String,
     val title: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
 data class HistoryItem(
     val url: String,
     val title: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
 data class DownloadItem(
     val id: Long,
     val fileName: String,
     val url: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
 data class BrowserProfile(
     val id: String,
     val name: String,
     val emoji: String,
-    val accentHex: Long
+    val accentHex: Long,
 )
 
 data class ReaderArticle(
     val title: String,
     val byline: String,
-    val content: String
+    val content: String,
 )
 
 data class AppSettings(
@@ -87,5 +87,9 @@ data class AppSettings(
     val restoreTabs: Boolean = true,
     val showFavorites: Boolean = true,
     val localSuggestions: Boolean = true,
-    val floatingMenu: Boolean = false
+    val floatingMenu: Boolean = false,
+    val leadingButton: BarButton = BarButton.TABS,
+    val trailingButton: BarButton = BarButton.NEW,
+    val readerTheme: ReaderTheme = ReaderTheme.LIGHT,
+    val readerSize: Int = 17,
 )
