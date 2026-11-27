@@ -9,6 +9,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -111,6 +112,16 @@ fun CandyAddressBar(
         label = "barElevation"
     )
     val barShape = RoundedCornerShape(lerp(30.dp, 16.dp, editProgress))
+    val idleAlpha by animateFloatAsState(
+        targetValue = if (isEditing) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "idleAlpha"
+    )
+    val editorAlpha by animateFloatAsState(
+        targetValue = if (isEditing) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "editorAlpha"
+    )
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
@@ -204,13 +215,11 @@ fun CandyAddressBar(
                         .padding(horizontal = 6.dp)
                 ) {
                     // ---------- Idle pill: shield, site chip, reload, tabs, 3-dot ----------
-                    AnimatedVisibility(
-                        visible = !isEditing,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
+                    if (!isEditing) {
                         Row(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(idleAlpha),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
@@ -284,7 +293,7 @@ fun CandyAddressBar(
                                 )
                             }
 
-                            AnimatedVisibility(visible = tab.url.isNotBlank()) {
+                            if (tab.url.isNotBlank()) {
                                 IconButton(onClick = onReload, modifier = Modifier.size(36.dp)) {
                                     Icon(
                                         imageVector = if (tab.isLoading) Icons.Default.Close else Icons.Default.Refresh,
@@ -346,13 +355,11 @@ fun CandyAddressBar(
                     }
 
                     // ---------- Editor: search icon, text field, clear, cancel ----------
-                    AnimatedVisibility(
-                        visible = isEditing,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
+                    if (isEditing) {
                         Row(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(editorAlpha),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Spacer(Modifier.width(6.dp))

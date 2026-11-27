@@ -862,7 +862,7 @@ fun BrowserXApp(
         if (showUpdateDialog) {
             UpdateDialog(
                 state = updateState,
-                onDownload = { (updateState as? UpdateState.Available)?.let { downloadUpdate(it) } },
+                onDownload = { (updateState as? UpdateState.Available)?.let { downloadUpdate(it.info) } },
                 onDismiss = { showUpdateDialog = false }
             )
         }
