@@ -92,5 +92,7 @@ data class AppSettings(
     val cookieBannerHiderEnabled: Boolean = true,
     val httpsOnlyEnabled: Boolean = false,
     val forceDarkWebEnabled: Boolean = false,
-    val hapticsEnabled: Boolean = true
+    val hapticsEnabled: Boolean = true,
+    /** Off by default: the toolbar stays pinned on top instead of sliding away on scroll. */
+    val hideToolbarOnScroll: Boolean = false
 )

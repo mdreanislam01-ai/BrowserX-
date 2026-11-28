@@ -79,8 +79,14 @@ jobs:
             versionCode=${{ env.BROWSERX_VERSION_CODE }}
 
             Changes in this build:
-            - Toolbar (search pill, tab counter, 3-dot menu) sits on top, with the Candy-style
-              expand / hide-on-scroll animation.
+            - Candy light ring: coloured lights run around the search pill while a page loads,
+              while typing a URL and for a moment after scrolling.
+            - The toolbar stays pinned on top (Settings -> "Hide toolbar while scrolling" is off
+              by default).
+            - Stronger ad blocking: bigger built-in list, optional EasyList/EasyPrivacy download,
+              in-page ad slot cleanup.
+            - BrowserX Shield: free, app-only VPN that filters ad/tracker DNS for BrowserX
+              (no server, no IP change).
             - In-app updates: Settings -> About & Updates, or the 3-dot menu, downloads and
               installs the new build without leaving the app.
             - System Back goes to the previous page, then to the home page, then leaves the app.

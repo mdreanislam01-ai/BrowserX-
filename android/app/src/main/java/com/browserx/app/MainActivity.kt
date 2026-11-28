@@ -2,12 +2,14 @@ package com.browserx.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -156,6 +158,46 @@ fun BrowserXApp(
     val chromeHidden = remember { mutableStateOf(false) }
     // Cooldown so resizing the WebView (which happens when the bar hides) cannot make it flap.
     val chromeToggleAt = remember { mutableStateOf(0L) }
+    // Bumped (throttled) while scrolling so the address bar light ring lights up.
+    val glowPulses = remember { mutableStateOf(0) }
+    val lastGlowAt = remember { mutableStateOf(0L) }
+
+    // Downloadable ad filter list (EasyList / EasyPrivacy hosts).
+    var filterHostCount by remember { mutableStateOf(AdBlockEngine.downloadedHostCount) }
+    var filterUpdating by remember { mutableStateOf(false) }
+
+    // BrowserX Shield: app-only DNS filtering VPN.
+    var shieldRunning by remember { mutableStateOf(ShieldVpnService.isRunning) }
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            ShieldVpnService.start(context)
+            shieldRunning = true
+        } else {
+            shieldRunning = false
+            Toast.makeText(context, "VPN permission was not granted", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun enableShield() {
+        val prepare = try {
+            VpnService.prepare(context)
+        } catch (_: Exception) {
+            null
+        }
+        if (prepare != null) {
+            vpnPermissionLauncher.launch(prepare)
+        } else {
+            ShieldVpnService.start(context)
+            shieldRunning = true
+        }
+    }
+
+    fun disableShield() {
+        ShieldVpnService.stop(context)
+        shieldRunning = false
+    }
 
     // In-app update state.
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -289,6 +331,21 @@ fun BrowserXApp(
         }
     }
 
+    fun updateFilterLists() {
+        if (filterUpdating) return
+        filterUpdating = true
+        uiScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { FilterLists.download(context) } }
+            filterUpdating = false
+            result.onSuccess { count ->
+                filterHostCount = count
+                Toast.makeText(context, "Ad filter updated: $count domains", Toast.LENGTH_LONG).show()
+            }.onFailure { error ->
+                Toast.makeText(context, "Filter update failed: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun downloadUpdate(info: UpdateInfo) {
         updateState = UpdateState.Downloading(info, 0)
         uiScope.launch {
@@ -367,13 +424,25 @@ fun BrowserXApp(
         }
     }
 
+    // Reflect the real service state in Settings (it starts asynchronously).
+    LaunchedEffect(activeScreen) {
+        if (activeScreen == ActiveScreen.SETTINGS) {
+            while (true) {
+                shieldRunning = ShieldVpnService.isRunning
+                delay(800)
+            }
+        }
+    }
+
     // Switching tabs should always show the toolbar again.
     LaunchedEffect(activeTabId) {
         chromeHidden.value = false
     }
 
-    // Silent update check once per launch; the dialog only appears when something is newer.
+    // Load the cached ad-filter list, then do a silent update check once per launch.
     LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { AdBlockEngine.loadDownloadedHosts(context) }
+        filterHostCount = AdBlockEngine.downloadedHostCount
         delay(1500)
         checkForUpdates(manual = false)
     }
@@ -459,6 +528,18 @@ fun BrowserXApp(
                     store.saveSettings(it)
                 },
                 appVersion = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                filterHostCount = filterHostCount,
+                builtInFilterCount = AdBlockEngine.builtInHostCount(),
+                filterUpdating = filterUpdating,
+                onUpdateFilters = { updateFilterLists() },
+                onClearFilters = {
+                    AdBlockEngine.clearDownloadedHosts(context)
+                    filterHostCount = 0
+                },
+                shieldRunning = shieldRunning,
+                onToggleShield = { wantsOn ->
+                    if (wantsOn) enableShield() else disableShield()
+                },
                 updateState = updateState,
                 onCheckForUpdates = { checkForUpdates(manual = true) },
                 onInstallUpdate = {
@@ -487,7 +568,8 @@ fun BrowserXApp(
                         tab = activeTab,
                         tabCount = tabs.size,
                         isAtTop = settings.addressBarPosition == AddressBarPosition.TOP,
-                        isChromeHidden = chromeHidden.value,
+                        isChromeHidden = settings.hideToolbarOnScroll && chromeHidden.value,
+                        glowPulse = glowPulses.value,
                         isBookmarked = isBookmarked,
                         hapticsEnabled = settings.hapticsEnabled,
                         onNavigate = { input -> navigateTab(activeTab.id, input) },
@@ -663,15 +745,25 @@ fun BrowserXApp(
                                                 // Candy-style chrome: slide the toolbar away while scrolling
                                                 // down and bring it back when scrolling up.
                                                 setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
-                                                    val now = SystemClock.uptimeMillis()
-                                                    if (now - chromeToggleAt.value < 400L) return@setOnScrollChangeListener
                                                     val delta = scrollY - oldScrollY
-                                                    if (delta > 12 && scrollY > 200 && !chromeHidden.value) {
-                                                        chromeHidden.value = true
-                                                        chromeToggleAt.value = now
-                                                    } else if (delta < -12 && chromeHidden.value) {
-                                                        chromeHidden.value = false
-                                                        chromeToggleAt.value = now
+                                                    if (delta > 8 || delta < -8) {
+                                                        val now = SystemClock.uptimeMillis()
+                                                        // Light ring flash, throttled so scrolling stays smooth.
+                                                        if (now - lastGlowAt.value > 300L) {
+                                                            lastGlowAt.value = now
+                                                            glowPulses.value = glowPulses.value + 1
+                                                        }
+                                                        if (settings.hideToolbarOnScroll &&
+                                                            now - chromeToggleAt.value > 400L
+                                                        ) {
+                                                            if (delta > 12 && scrollY > 200 && !chromeHidden.value) {
+                                                                chromeHidden.value = true
+                                                                chromeToggleAt.value = now
+                                                            } else if (delta < -12 && chromeHidden.value) {
+                                                                chromeHidden.value = false
+                                                                chromeToggleAt.value = now
+                                                            }
+                                                        }
                                                     }
                                                 }
 
@@ -735,6 +827,9 @@ fun BrowserXApp(
                                                         if (url == null || url == "about:blank") return
                                                         if (settings.cookieBannerHiderEnabled) {
                                                             view?.evaluateJavascript(AdBlockEngine.COOKIE_BANNER_HIDER_JS, null)
+                                                        }
+                                                        if (settings.adBlockEnabled) {
+                                                            view?.evaluateJavascript(AdBlockEngine.AD_SLOT_HIDER_JS, null)
                                                         }
                                                         val pageTitle = view?.title?.takeIf { it.isNotBlank() } ?: (url ?: "Page")
                                                         val pageUrl = url ?: activeTab.url
